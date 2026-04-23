@@ -130,6 +130,7 @@ models_test/
 *.jpg
 *.png
 *.jpeg
+images/
 test_images/
 images_test_staging/
 safety_pipeline.py
