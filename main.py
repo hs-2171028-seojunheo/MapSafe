@@ -101,10 +101,10 @@ def main() -> None:
 
     try:
         print("[Stage 1] YOLO Extraction")
-        subprocess.run(["python", "extractor_yolo.py"], check=True)
+        subprocess.run(["python", "extractors/extractor_yolo.py"], check=True)
 
         print("[Stage 2] SegFormer Extraction")
-        subprocess.run(["python", "extractor_segformer.py"], check=True)
+        subprocess.run(["python", "extractors/extractor_segformer.py"], check=True)
 
         print("[Stage 3] Merging CSVs")
         merger = FeatureMerger(

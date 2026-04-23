@@ -41,10 +41,14 @@ MapSafe는 단일 비전 모델의 한계를 극복하기 위해 객체 탐지 +
 ```text
 MapSafe/
 ├── main.py                     # 메인코드 (실행 진입점)
-├── extractor_yolo.py           # YOLO 객체 탐지 독립 모듈
-├── extractor_segformer.py      # SegFormer 의미 분할 독립 모듈
 ├── model_predictor.py          # AutoGluon 머신러닝 예측 독립 모듈
-├── test.py                     # 테스트 파이프라인
+│
+├── extractors/                 # 독립 특징추출 모듈들
+│   ├── extractor_yolo.py       # YOLO 객체 탐지 독립 모듈
+│   └── extractor_segformer.py  # SegFormer 의미 분할 독립 모듈
+│
+├── tests/                      # 테스트 관련 코드
+│   └── test.py                 # 테스트 파이프라인
 │
 ├── requirements.txt            # 의존성 패키지
 │
@@ -138,8 +142,8 @@ MapSafe/
 
 7.1 이미지 특징만 개별로 추출하기
 ```python
-    from extractor_yolo import YoloFeatureExtractor
-    from extractor_segformer import SegFormerFeatureExtractor
+    from extractors.extractor_yolo import YoloFeatureExtractor
+    from extractors.extractor_segformer import SegFormerFeatureExtractor
     
     # YOLO 추출기 단독 사용
     yolo_ext = YoloFeatureExtractor()

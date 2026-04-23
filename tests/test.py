@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from main import FeatureMerger
 
 
@@ -93,7 +98,7 @@ def run_split_pipeline_test(source_paths: list[str]) -> None:
         # Stage 1: YOLO extraction (isolated process)
         run_python_subprocess(
             (
-                "from extractor_yolo import YoloFeatureExtractor; "
+                "from extractors.extractor_yolo import YoloFeatureExtractor; "
                 f"YoloFeatureExtractor('yolo11n.pt').run(image_dir={str(staging_dir)!r}, "
                 f"output_csv={str(yolo_csv)!r})"
             ),
@@ -103,7 +108,7 @@ def run_split_pipeline_test(source_paths: list[str]) -> None:
         # Stage 2: SegFormer extraction (isolated process)
         run_python_subprocess(
             (
-                "from extractor_segformer import SegFormerFeatureExtractor; "
+                "from extractors.extractor_segformer import SegFormerFeatureExtractor; "
                 f"SegFormerFeatureExtractor(device=None).run(image_dir={str(staging_dir)!r}, "
                 f"output_csv={str(segformer_csv)!r})"
             ),
