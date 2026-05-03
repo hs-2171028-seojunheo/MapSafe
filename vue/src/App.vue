@@ -1,12 +1,14 @@
-<script setup>
-import Map from './components/Map.vue'
-</script>
-
 <template>
-  <div>
-    <h1>지도 테스트</h1>
-    <Map />
-  </div>
+  <Menu />
+  <router-view />
 </template>
 
-<style></style>
+<script>
+import Menu from "./components/Menu.vue";
+
+export default {
+  components: {
+    Menu,
+  },
+};
+</script>
