@@ -21,10 +21,15 @@ class SegFormerFeatureExtractor:
         """Initialize SegFormer feature extractor.
 
         Args:
-            device: Device string. If None, auto-detects CUDA or CPU.
+            device: Device string. If None, auto-detects CUDA/Metal/CPU.
         """
         if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                self.device = "cuda"
+            elif torch.backends.mps.is_available():
+                self.device = "mps"  # Mac Metal Performance Shaders
+            else:
+                self.device = "cpu"
         else:
             self.device = device
 

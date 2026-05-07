@@ -58,6 +58,7 @@ coverage.xml
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+*.db
 
 # Flask stuff:
 instance/
@@ -134,6 +135,15 @@ images/
 test_images/
 images_test_staging/
 safety_pipeline.py
+
+# AutoGluon & Model Artifacts
+*.pkl
+*.ubj
+metadata.json
+models/
+
+# Data Files
+*.xlsx
 
 # Keep only core source/docs for commit
 !.gitignore

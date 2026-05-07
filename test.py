@@ -88,10 +88,10 @@ def run_split_pipeline_test(source_paths: list[str]) -> None:
 
     print(f"[Info] Total staged images: {staged_count}")
 
-    yolo_csv = Path("./yolo_features_test.csv")
-    segformer_csv = Path("./segformer_features_test.csv")
-    extracted_csv = Path("./extracted_features_test.csv")
-    ground_truth_csv = Path("./ground_truth_test.csv")
+    yolo_csv = Path("./test_csv/yolo_features_test.csv")
+    segformer_csv = Path("./test_csv/segformer_features_test.csv")
+    extracted_csv = Path("./test_csv/extracted_features_test.csv")
+    ground_truth_csv = Path("./test_csv/ground_truth_test.csv")
     model_dir = Path("./models_test/")
 
     try:

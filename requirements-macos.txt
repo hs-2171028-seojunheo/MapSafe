@@ -1,0 +1,26 @@
+# macOS optimized requirements with Metal Performance Shaders support
+# Install with: pip install -r requirements-macos.txt
+
+# Core ML frameworks (Mac Metal optimized)
+torch>=2.3.0,<2.5
+torchvision>=0.18.0,<0.20
+
+# Vision models & feature extraction
+ultralytics>=8.1.0
+transformers>=4.40.0
+opencv-python>=4.9.0
+
+# Data processing & ML
+numpy>=1.26.0
+pandas>=2.1.0
+scikit-learn>=1.4.0
+
+# AutoML (Mac compatible)
+autogluon>=1.1.1
+
+# Utilities
+psutil>=5.9.0
+
+# Mac-specific optimizations
+# Note: torch MPS (Metal Performance Shaders) is auto-detected
+# For best performance on Apple Silicon (M1/M2/M3), torch will automatically use MPS backend

@@ -5,7 +5,7 @@
 
 ## 1. 프로젝트 개요
 
-MapSafe는 단일 비전 모델의 한계를 극복하기 위해 객체 탐지 + 의미 분할 + 머신러닝을 결합한 2단계 Hybrid 구조로 설계되었습니다.
+MapSafe는 단일 비전 모델의 한계를 극복하기 위해 객체 탐지(YOLO) + 의미 분할(SegFormer) + 머신러닝(AutoGluon)을 결합한 하이브리드 안전도 예측 시스템입니다.
 
 이미지에서 다양한 특징을 추출한 뒤, 이를 기반으로 거리 안전도 점수 (1.0 ~ 5.0)를 예측합니다.
 
@@ -40,17 +40,15 @@ MapSafe는 단일 비전 모델의 한계를 극복하기 위해 객체 탐지 +
 
 ```text
 MapSafe/
-├── main.py                     # 메인코드 (실행 진입점)
+├── main.py                     # 메인 파이프라인 (실행 진입점)
 ├── model_predictor.py          # AutoGluon 머신러닝 예측 독립 모듈
-│
 ├── extractors/                 # 독립 특징추출 모듈들
 │   ├── extractor_yolo.py       # YOLO 객체 탐지 독립 모듈
 │   └── extractor_segformer.py  # SegFormer 의미 분할 독립 모듈
+├── preprocess/                 
+│   └── preprocess_survey.py    # 설문 조사 결과 전처리 스크립트
 │
-├── tests/                      # 테스트 관련 코드
-│   └── test.py                 # 테스트 파이프라인
-│
-├── requirements.txt            # 의존성 패키지
+├── requirements.txt            # 의존성 패키지 목록
 │
 ├── images/                     # 평가 대상 이미지 폴더
 ├── ground_truth.csv            # 정답 데이터
@@ -78,7 +76,7 @@ MapSafe/
    - extractor_segformer.py 실행 → segformer_features.csv 산출 후 메모리 완전 해제
 
 4. **CSV 특징 병합**
-   - 두 CSV 파일을 image_filename 기준으로 Inner Join하여 extracted_features.csv 생성
+   - 두 CSV 파일을 image_filename 기준으로 데이터를 결합하여 extracted_features.csv 생성
   
 5. **모델 학습**
    - model_predictor.py 실행 → AutoGluon 회귀 모델 학습 후 models/ 에 저장
@@ -119,61 +117,81 @@ MapSafe/
 
 ## 6. 실행 방법
 
-### 6.1 환경 설정
-    # 가상 환경 생성
-    python -m venv venv
 
-    # 활성화
-    venv\Scripts\activate     # Windows
-    source venv/bin/activate  # macOS/Linux
+### 6.1 권장 사양
 
-    # 패키지 설치
-    pip install -r requirements.txt
+- Python 버전: 3.10 또는 3.11 (AutoGluon 안정성 및 라이브러리 호환성 권장)
+- 가상 환경: venv 또는 conda 사용 권장
 
-### 6.2 테스트 실행
-    python test.py
-    
-### 6.3 전체 파이프라인 실행
-    python main.py
+### 6.2 플랫폼별 설정
+
+#### Windows
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+#### macOS 
+```bash
+# 시스템 라이브러리 설치 (필수)
+brew install libomp
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 6.3  실행
+```bash
+# 전체 파이프라인 (추출부터 학습까지)
+python main.py
+
+# 테스트 실행
+python test.py
+```
 
 ---
 
 ## 7. 모듈별 개별 사용법 (API)
 
-7.1 이미지 특징만 개별로 추출하기
+### 7.1 이미지 특징만 개별로 추출하기
+
 ```python
-    from extractors.extractor_yolo import YoloFeatureExtractor
-    from extractors.extractor_segformer import SegFormerFeatureExtractor
-    
-    # YOLO 추출기 단독 사용
-    yolo_ext = YoloFeatureExtractor()
-    yolo_df = yolo_ext.extract_from_directory('./images/')
-    
-    # SegFormer 추출기 단독 사용
-    seg_ext = SegFormerFeatureExtractor()
-    seg_df = seg_ext.extract_from_directory('./images/')
+from extractors.extractor_yolo import YoloFeatureExtractor
+from extractors.extractor_segformer import SegFormerFeatureExtractor
+
+# YOLO 추출기 단독 사용
+yolo_ext = YoloFeatureExtractor()
+yolo_df = yolo_ext.extract_from_directory('./images/')
+
+# SegFormer 추출기 단독 사용
+seg_ext = SegFormerFeatureExtractor()
+seg_df = seg_ext.extract_from_directory('./images/')
 ```
 
-7.2 새로운 데이터 안전도 예측하기
+### 7.2 새로운 데이터 안전도 예측하기
+
 ```python
-    import pandas as pd
-    from model_predictor import SafetyModelPredictor
-    
-    predictor = SafetyModelPredictor('./extracted_features.csv', './ground_truth.csv', './models/')
-    # (학습 완료 가정)
-    
-    new_features = pd.DataFrame({
-        'person_count': [2], 'car_count': [1], 'truck_count': [0],
-        'road_ratio': [45.5], 'building_ratio': [28.3], 'wall_ratio': [5.1],
-        'vegetation_ratio': [12.2], 'sky_ratio': [9.0]
-    })
-    
-    predictions = predictor.predict(new_features)
-    print(f"예측된 안전 점수: {predictions[0]:.2f}")
+import pandas as pd
+from model_predictor import SafetyModelPredictor
+
+predictor = SafetyModelPredictor('./extracted_features.csv', './ground_truth.csv', './models/')
+# (학습 완료 가정)
+
+new_features = pd.DataFrame({
+    'person_count': [2], 'car_count': [1], 'truck_count': [0],
+    'road_ratio': [45.5], 'building_ratio': [28.3], 'wall_ratio': [5.1],
+    'vegetation_ratio': [12.2], 'sky_ratio': [9.0]
+})
+
+predictions = predictor.predict(new_features)
+print(f"예측된 안전 점수: {predictions[0]:.2f}")
 ```
 ---
 
 ## 8. 자주 발생하는 에러 (Troubleshooting)
+
+### 일반 에러
 
 | 에러 메시지 | 원인 | 해결 방법 |
 |------------|------|-----------|
@@ -182,4 +200,13 @@ MapSafe/
 | Merge failed / Empty DataFrame | CSV 파일 간 불일치 | 각 CSV 파일에 동일한 `image_filename` 존재 여부 확인 |
 | Import fastai failed | 일부 모델 의존성 누락 | 무시 가능 (다른 트리 기반 모델이 자동 사용됨) |
 | psutil module not found | 메모리 로깅 라이브러리 누락 | `pip install psutil` 실행 |
+
+### macOS 특화 에러
+
+| 에러 메시지 | 원인 | 해결 방법 |
+|------------|------|-----------|
+| LightGBMError | macOS에 LightGBM 구동을 위한 핵심 라이브러리(libomp) 미설치 | `brew install libomp` 실행 후 패키지 재설치 |
+| ImportError | AutoGluon과 PyTorch 버전 간의 호환성 충돌 (주로 Python 3.12) | 파이썬 버전을 3.10 또는 3.11로 변경 및 `torch>=2.3.0 설치` |
+| RuntimeError | Apple Silicon 기기 메모리 부족으로 인한 프로세스 강제 종료 | `main.py` 파이프라인을 사용하여 프로세스 격리 실행 |
+| ReadTimeoutError / transformers download timeout | Hugging Face 모델 가중치 다운로드 중 네트워크 타임아웃 | `HF_HOME` 설정 후 재시도: `export HF_HOME=~/.cache/huggingface` |
 

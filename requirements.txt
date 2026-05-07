@@ -1,9 +1,19 @@
-torch==2.1.0
-torchvision==0.16.0
-ultralytics==8.0.200
-transformers==4.35.0
-opencv-python==4.8.1.78
-numpy==1.24.3
-pandas==2.1.0
-scikit-learn==1.3.0
-autogluon==1.0.0
+# Core ML frameworks (compatible versions)
+torch>=2.3.0,<2.5
+torchvision>=0.18.0,<0.20
+
+# Vision models & feature extraction
+ultralytics>=8.1.0
+transformers>=4.40.0
+opencv-python>=4.9.0
+
+# Data processing & ML
+numpy>=1.26.0
+pandas>=2.1.0
+scikit-learn>=1.4.0
+
+# AutoML
+autogluon>=1.1.1
+
+# Utilities
+psutil>=5.9.0
