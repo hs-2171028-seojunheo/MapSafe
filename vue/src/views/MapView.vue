@@ -1,6 +1,9 @@
 <template>
-  <div id="mapContainer">
-    <div id="map"></div>
+   <div id="mapContainer">
+    <div id="mapWrapper">
+      <div id="map"></div>
+      <button id="walkBtn" @click="toggleWalkRoads">{{ isWalkVisible ? "도보 끄기" : "도보" }}</button>
+    </div>
     <div id="roadview"></div>
   </div>
 </template>
@@ -8,7 +11,11 @@
 <script>
 export default {
   data() {
-    return {};
+    return {
+      map: null,
+      walkPolylines: [],
+      isWalkVisible: false,
+    };
   },
 
   mounted() {
@@ -31,11 +38,12 @@ export default {
       const roadviewContainer = document.getElementById("roadview");
 
       const mapOption = {
-        center: new kakao.maps.LatLng(37.562632898194835, 126.9454282268269),
+        center: new kakao.maps.LatLng(37.589372, 127.016745),
         level: 3,
       };
 
       const map = new kakao.maps.Map(mapContainer, mapOption);
+      this.map = map;
       const roadview = new kakao.maps.Roadview(roadviewContainer);
       const roadviewClient = new kakao.maps.RoadviewClient();
 
@@ -86,14 +94,91 @@ export default {
         });
       });
     },
+   async toggleWalkRoads() {
+    if (this.isWalkVisible) {
+      const currentCenter = this.map.getCenter();
+      const currentLevel = this.map.getLevel();
+
+      this.resetMap(currentCenter, currentLevel);
+
+      this.walkPolylines = [];
+      this.isWalkVisible = false;
+      return;
+    }
+
+    await this.drawSafetyRoads();
+    this.isWalkVisible = true;
   },
-};
+
+  resetMap(center, level) {
+    const mapContainer = document.getElementById("map");
+
+    const mapOption = {
+      center,
+      level,
+    };
+
+    this.map = new kakao.maps.Map(mapContainer, mapOption);
+  },
+
+  async drawSafetyRoads() {
+    const response = await fetch("/seongbuk_walk.geojson");
+    const geojson = await response.json();
+
+    this.walkPolylines = [];
+
+    geojson.features.forEach((feature) => {
+      if (!feature.geometry) return;
+
+      const geometryType = feature.geometry.type;
+      const coordinates = feature.geometry.coordinates;
+
+      if (geometryType === "LineString") {
+        const path = coordinates.map((coord) => {
+          return new kakao.maps.LatLng(coord[1], coord[0]);
+        });
+
+        const polyline = new kakao.maps.Polyline({
+          path,
+          strokeWeight: 4,
+          strokeColor: "#00AAFF",
+          strokeOpacity: 0.8,
+          strokeStyle: "solid",
+        });
+
+        polyline.setMap(this.map);
+        this.walkPolylines.push(polyline);
+      }
+    });
+  },
+  },
+}
 </script>
 
 <style>
-#map {
+#mapWrapper {
+  position: relative;
   width: 750px;
   height: 350px;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+#walkBtn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 9999;
+
+  padding: 8px 14px;
+  background-color: white;
+  border: 1px solid #999;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
 }
 
 #roadview {
