@@ -112,6 +112,7 @@ export default {
 
   resetMap(center, level) {
     const mapContainer = document.getElementById("map");
+    mapContainer.innerHTML = "";
 
     const mapOption = {
       center,
@@ -135,13 +136,26 @@ export default {
 
       if (geometryType === "LineString") {
         const path = coordinates.map((coord) => {
-          return new kakao.maps.LatLng(coord[1], coord[0]);
+          return new kakao.maps.LatLng(coord[0], coord[1]);
         });
+
+        const safeScore = feature.properties?.safeScore ?? 3.0;
+
+        let strokeColor = "#00FF00";
+        if (safeScore < 2.5) {
+          strokeColor = "#FF0000";
+        }
+        else if (safeScore < 3.5) {
+          strokeColor = "#FFFF00";
+        }
+        else {
+          strokeColor = "#00FF00";
+        }
 
         const polyline = new kakao.maps.Polyline({
           path,
           strokeWeight: 4,
-          strokeColor: "#00AAFF",
+          strokeColor: strokeColor,
           strokeOpacity: 0.8,
           strokeStyle: "solid",
         });
