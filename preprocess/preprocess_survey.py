@@ -35,7 +35,7 @@ def preprocess_survey_data(raw_csv_path: str, output_csv_path: str) -> None:
     final_df = long_df.groupby('image_id')['safety_score'].mean().reset_index()
     
     # 5. image_filename 형태로 변환 (예: 135 -> 135.jpg)
-    # [주의] 실제 파일 확장자나 이름 규칙에 맞게 아래 코드를 수정해야 할 수도 있습니다.
+    # 실제 파일 확장자에 맞게 수정
     final_df['image_filename'] = final_df['image_id'].astype(str) + '.jpg'
     
     # AutoGluon이 요구하는 2개 컬럼만 남기기
@@ -50,7 +50,7 @@ def preprocess_survey_data(raw_csv_path: str, output_csv_path: str) -> None:
     print(final_df.head())
 
 if __name__ == "__main__":
-    # 다운받으신 엑셀(CSV) 파일명과 일치시켜주세요.
+    # 엑셀(CSV) 파일명과 일치
     preprocess_survey_data(
         raw_csv_path="./preprocess/도시 안전 인식 조사 결과.xlsx", 
         output_csv_path="./ground_truth.csv"
