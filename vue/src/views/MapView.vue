@@ -50,8 +50,10 @@ export default {
       let marker = null;
       let infowindow = null;
 
-      kakao.maps.event.addListener(map, "click", function (mouseEvent) {
+      kakao.maps.event.addListener(map, "click", async (mouseEvent) => {
         const latlng = mouseEvent.latLng;
+        const lat = latlng.getLat();
+        const lng = latlng.getLng();
 
         if (marker) {
           marker.setMap(null);
@@ -66,32 +68,62 @@ export default {
           map: map,
         });
 
-        roadviewClient.getNearestPanoId(latlng, 50, function (panoId) {
-          if (panoId === null) {
-            infowindow = new kakao.maps.InfoWindow({
-              content: '<div style="padding:8px;">근처에 로드뷰가 없습니다.</div>',
-            });
+        infowindow = new kakao.maps.InfoWindow({
+          content: `
+            <div style="padding:10px; width:220px;">
+              <b>분석 중...</b><br>
+              위도: ${lat.toFixed(6)}<br>
+              경도: ${lng.toFixed(6)}
+            </div>
+          `,
+        });
 
-            infowindow.open(map, marker);
+        infowindow.open(map, marker);
+
+        roadviewClient.getNearestPanoId(latlng, 50, function (panoId) {
+          if (panoId !== null) {
+            roadview.setPanoId(panoId, latlng);
+          }
+        });
+
+        try {
+          const response = await fetch(
+            `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`
+          );
+
+          const result = await response.json();
+
+          if (result.error) {
+            infowindow.setContent(`
+              <div style="padding:10px; width:220px;">
+                <b>분석 실패</b><br>
+                ${result.error}
+              </div>
+            `);
             return;
           }
 
-          roadview.setPanoId(panoId, latlng);
+          infowindow.setContent(`
+            <div style="padding:10px; width:240px;">
+              <b>선택한 위치</b><br>
+              위도: ${lat.toFixed(6)}<br>
+              경도: ${lng.toFixed(6)}<br>
+              <hr>
+              <b>안전 점수:</b> ${result.safety_score.toFixed(2)}점<br>
+              <br>
+            </div>
+          `);
 
-          infowindow = new kakao.maps.InfoWindow({
-            content: `
-              <div style="padding:8px;">
-                선택한 위치<br>
-                위도: ${latlng.getLat().toFixed(6)}<br>
-                경도: ${latlng.getLng().toFixed(6)}
-              </div>
-            `,
-          });
+        } catch (error) {
+          console.error(error);
 
-          kakao.maps.event.addListener(marker, "click", function () {
-            infowindow.open(map, marker);
-          });
-        });
+          infowindow.setContent(`
+            <div style="padding:10px; width:220px;">
+              <b>서버 연결 오류</b><br>
+              FastAPI 서버를 확인하세요.
+            </div>
+          `);
+        }
       });
     },
    async toggleWalkRoads() {
@@ -193,11 +225,5 @@ export default {
   border-radius: 6px;
   cursor: pointer;
   font-weight: bold;
-}
-
-#roadview {
-  width: 750px;
-  height: 350px;
-  margin-top: 16px;
 }
 </style>
