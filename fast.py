@@ -56,35 +56,10 @@ image_transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-class PerceptionModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.backbone = torch.hub.load(
-            "pytorch/vision:v0.10.0",
-            "resnet18",
-            pretrained=False
-        )
-        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 1)
-
-    def forward(self, x):
-        return self.backbone(x)
-
-def load_perception_model(path):
-    model = torch.load(path, map_location=DEVICE, weights_only=False)
-    model.to(DEVICE)
-    model.eval()
-    return model
-
 # 4. 서버 시작 시 각종 모델 1회 로드
 yolo_extractor = YoloFeatureExtractor(model_path="yolo11n.pt")
 segformer_extractor = SegFormerFeatureExtractor(device=None)
 opencv_extractor = OpenCVFeatureExtractor()
-safety_model = load_perception_model("perception_models/safety.pth")
-lively_model = load_perception_model("perception_models/lively.pth")
-wealthy_model = load_perception_model("perception_models/wealthy.pth")
-beautiful_model = load_perception_model("perception_models/beautiful.pth")
-boring_model = load_perception_model("perception_models/boring.pth")
-depressing_model = load_perception_model("perception_models/depressing.pth")
 predictor = TabularPredictor.load("models")
 
 #SHAP 중요도 CSV 데이터 로드 (서버 시작 시 1회만 실행)
@@ -107,39 +82,6 @@ if shap_csv_path.exists():
 else:
     print("[System] ⚠️ models/shap_global_importance.csv 파일이 없어 기본 분석 모드로 동작합니다.")
 
-
-def get_score_from_output(output):
-    if output.numel() == 1:
-        return output.item()
-
-    probs = torch.softmax(output, dim=1)
-    return probs[0, 1].item()
-
-def predict_perception(image):
-    img_tensor = image_transform(image).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        safety_output = safety_model(img_tensor)
-        lively_output = lively_model(img_tensor)
-        wealthy_output = wealthy_model(img_tensor)
-        beautiful_output = beautiful_model(img_tensor)
-        boring_output = boring_model(img_tensor)
-        depressing_output = depressing_model(img_tensor)
-
-        safety = get_score_from_output(safety_output)
-        lively = get_score_from_output(lively_output)
-        wealthy = get_score_from_output(wealthy_output)
-        beautiful = get_score_from_output(beautiful_output)
-        boring = get_score_from_output(boring_output)
-        depressing = get_score_from_output(depressing_output)
-
-    return {
-        "safety": float(safety),
-        "lively": float(lively),
-        "wealthy": float(wealthy),
-        "beautiful" : float(beautiful),
-        "boring" : float(boring),
-        "depressing" : float(depressing)
-    }
 
 # Gemini API + SHAP 데이터 융합 XAI 리포트 생성 함수
 def generate_explanation_with_gemini(score: float, features: dict) -> str:
@@ -164,6 +106,9 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
     - 하늘 개방감 비율: {features.get('sky_ratio', 0):.1f}%
     - 막힌 벽/담장 비율: {features.get('wall_ratio', 0):.1f}%
     - 시각적 직관적 안전도(Perception): {features.get('safety', 3.0):.2f}점
+    - 사진 전체 밝기(조도): {features.get('brightness_mean', 0):.1f}
+    - 어두운 영역 비율: {features.get('dark_area_ratio', 0):.1f}%
+    - 엣지(윤곽선) 밀도: {features.get('edge_density', 0):.1f}%
 
     [참고할 분석 기준 (내부 데이터)]
     {model_rule_text}
@@ -235,34 +180,7 @@ def predict(lat: float, lng: float, heading: int = 0):
         # 3. feature 병합
         features_df = yolo_df.merge(segformer_df, on="image_filename", how="inner")
         features_df = features_df.merge(opencv_df, on="image_filename", how="inner")
-        #perception score 추출
-        perception_scores = predict_perception(
-            image
-        )
-
-        #print("PERCEPTION")
-        #print(perception_scores)
-
-        features_df["safety"] = perception_scores[
-            "safety"
-        ]
-
-        features_df["lively"] = perception_scores[
-            "lively"
-        ]
-
-        features_df["wealthy"] = perception_scores[
-            "wealthy"
-        ]
-        features_df["beautiful"] = perception_scores[
-            "beautiful"
-        ]
-        features_df["boring"] = perception_scores[
-            "boring"
-        ]
-        features_df["depressing"] = perception_scores[
-            "depressing"
-        ]
+        
         #print("FEATURES DF")
         #print(features_df)
 
@@ -275,6 +193,7 @@ def predict(lat: float, lng: float, heading: int = 0):
         input_df = input_df[required_cols]
 
         score = predictor.predict(input_df).iloc[0]
+        score = max(1.0, min(5.0, float(score)))
         feature_dict = input_df.iloc[0].to_dict()
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
 
@@ -309,14 +228,6 @@ async def predict_upload(file: UploadFile = File(...)):
         features_df = yolo_df.merge(segformer_df, on="image_filename", how="inner")
         features_df = features_df.merge(opencv_df, on="image_filename", how="inner")
 
-        perception_scores = predict_perception(image)
-        features_df["safety"] = perception_scores["safety"]
-        features_df["lively"] = perception_scores["lively"]
-        features_df["wealthy"] = perception_scores["wealthy"]
-        features_df["beautiful"] = perception_scores["beautiful"]
-        features_df["boring"] = perception_scores["boring"]
-        features_df["depressing"] = perception_scores["depressing"]
-
         input_df = features_df.drop(columns=["image_filename"])
         required_cols = predictor.feature_metadata_in.get_features()
 
@@ -327,6 +238,7 @@ async def predict_upload(file: UploadFile = File(...)):
 
         score = predictor.predict(input_df).iloc[0]
         feature_dict = input_df.iloc[0].to_dict()
+        score = max(1.0, min(5.0, float(score)))
         # Gemini 호출
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
         return {
