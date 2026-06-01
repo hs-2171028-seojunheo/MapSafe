@@ -92,6 +92,7 @@ export default {
           );
 
           const result = await response.json();
+          const imageUrl = result.image_url;
 
           if (result.error) {
             infowindow.setContent(`
@@ -110,11 +111,20 @@ export default {
               <span style="color:#7f8c8d; font-size:11px;">위도: ${lat.toFixed(5)} / 경도: ${lng.toFixed(5)}</span>
               <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
               <b>안전 점수:</b> <span style="font-size:15px; font-weight:bold; color:#2e7d32;">${result.safety_score.toFixed(2)}점</span>
-              
+              <img
+                src="${imageUrl}"
+                style="
+                  width:220px;
+                  height:120px;
+                  object-fit:cover;
+                  border-radius:8px;
+                  margin-top:8px;
+                  margin-bottom:8px;
+                "
+              />
               <div style="margin-top:10px; padding:8px; background:#f8f9fa; border-radius:4px; font-size:12px; color:#455a64; border-left:3px solid #0288d1;">
                 ${result.explanation}
               </div>
-            </div>
           `);
 
         } catch (error) {

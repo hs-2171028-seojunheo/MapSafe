@@ -20,6 +20,7 @@ from google import genai
 
 from extractors.extractor_yolo import YoloFeatureExtractor
 from extractors.extractor_segformer import SegFormerFeatureExtractor
+from extractors.extractor_opencv import OpenCVFeatureExtractor
 from autogluon.tabular import TabularPredictor
 
 # 1. 환경변수 로드 및 API 키 설정
@@ -75,9 +76,13 @@ def load_perception_model(path):
 # 4. 서버 시작 시 각종 모델 1회 로드
 yolo_extractor = YoloFeatureExtractor(model_path="yolo11n.pt")
 segformer_extractor = SegFormerFeatureExtractor(device=None)
+opencv_extractor = OpenCVFeatureExtractor()
 safety_model = load_perception_model("perception_models/safety.pth")
 lively_model = load_perception_model("perception_models/lively.pth")
 wealthy_model = load_perception_model("perception_models/wealthy.pth")
+beautiful_model = load_perception_model("perception_models/beautiful.pth")
+boring_model = load_perception_model("perception_models/boring.pth")
+depressing_model = load_perception_model("perception_models/depressing.pth")
 predictor = TabularPredictor.load("models")
 
 # 5. SHAP 중요도 CSV 데이터 로드 (서버 시작 시 1회만 실행)
@@ -112,15 +117,24 @@ def predict_perception(image):
         safety_output = safety_model(img_tensor)
         lively_output = lively_model(img_tensor)
         wealthy_output = wealthy_model(img_tensor)
+        beautiful_output = beautiful_model(img_tensor)
+        boring_output = boring_model(img_tensor)
+        depressing_output = depressing_model(img_tensor)
 
         safety = get_score_from_output(safety_output)
         lively = get_score_from_output(lively_output)
         wealthy = get_score_from_output(wealthy_output)
+        beautiful = get_score_from_output(beautiful_output)
+        boring = get_score_from_output(boring_output)
+        depressing = get_score_from_output(depressing_output)
 
     return {
         "safety": float(safety),
         "lively": float(lively),
-        "wealthy": float(wealthy)
+        "wealthy": float(wealthy),
+        "beautiful" : float(beautiful),
+        "boring" : float(boring),
+        "depressing" : float(depressing)
     }
 
 # 6. Gemini API + SHAP 데이터 융합 XAI 리포트 생성 함수
@@ -209,12 +223,43 @@ def predict(lat: float, lng: float, heading: int = 0):
 
         yolo_df = yolo_extractor.extract_from_directory(str(temp_dir))
         segformer_df = segformer_extractor.extract_from_directory(str(temp_dir))
+        #print("SEGFORMER DF")
+        #print(segformer_df)
+        opencv_df = opencv_extractor.extract_from_directory(str(temp_dir))
+
+        # 3. feature 병합
         features_df = yolo_df.merge(segformer_df, on="image_filename", how="inner")
-        
-        perception_scores = predict_perception(image)
-        features_df["safety"] = perception_scores["safety"]
-        features_df["lively"] = perception_scores["lively"]
-        features_df["wealthy"] = perception_scores["wealthy"]
+        features_df = features_df.merge(opencv_df, on="image_filename", how="inner")
+        #perception score 추출
+        perception_scores = predict_perception(
+            image
+        )
+
+        #print("PERCEPTION")
+        #print(perception_scores)
+
+        features_df["safety"] = perception_scores[
+            "safety"
+        ]
+
+        features_df["lively"] = perception_scores[
+            "lively"
+        ]
+
+        features_df["wealthy"] = perception_scores[
+            "wealthy"
+        ]
+        features_df["beautiful"] = perception_scores[
+            "beautiful"
+        ]
+        features_df["boring"] = perception_scores[
+            "boring"
+        ]
+        features_df["depressing"] = perception_scores[
+            "depressing"
+        ]
+        #print("FEATURES DF")
+        #print(features_df)
 
         input_df = features_df.drop(columns=["image_filename"])
         required_cols = predictor.feature_metadata_in.get_features()
@@ -236,6 +281,7 @@ def predict(lat: float, lng: float, heading: int = 0):
             "safety_score": float(score),
             "explanation": explanation,
             "features": feature_dict
+            "image_url": url,
         }
     
     finally:
@@ -255,12 +301,18 @@ async def predict_upload(file: UploadFile = File(...)):
 
         yolo_df = yolo_extractor.extract_from_directory(str(temp_dir))
         segformer_df = segformer_extractor.extract_from_directory(str(temp_dir))
+        opencv_df = opencv_extractor.extract_from_directory(str(temp_dir))
+
         features_df = yolo_df.merge(segformer_df, on="image_filename", how="inner")
+        features_df = features_df.merge(opencv_df, on="image_filename", how="inner")
 
         perception_scores = predict_perception(image)
         features_df["safety"] = perception_scores["safety"]
         features_df["lively"] = perception_scores["lively"]
         features_df["wealthy"] = perception_scores["wealthy"]
+        features_df["beautiful"] = perception_scores["beautiful"]
+        features_df["boring"] = perception_scores["boring"]
+        features_df["depressing"] = perception_scores["depressing"]
 
         input_df = features_df.drop(columns=["image_filename"])
         required_cols = predictor.feature_metadata_in.get_features()
