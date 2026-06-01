@@ -92,6 +92,7 @@ export default {
           );
 
           const result = await response.json();
+          const imageUrl = result.image_url;
 
           if (result.error) {
             infowindow.setContent(`
@@ -109,6 +110,17 @@ export default {
               위도: ${lat.toFixed(6)}<br>
               경도: ${lng.toFixed(6)}<br>
               <hr>
+              <img
+                src="${imageUrl}"
+                style="
+                  width:220px;
+                  height:120px;
+                  object-fit:cover;
+                  border-radius:8px;
+                  margin-top:8px;
+                  margin-bottom:8px;
+                "
+              />
               <b>안전 점수:</b> ${result.safety_score.toFixed(2)}점<br>
               <br>
             </div>
