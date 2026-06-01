@@ -280,7 +280,7 @@ def predict(lat: float, lng: float, heading: int = 0):
             "lng": lng,
             "safety_score": float(score),
             "explanation": explanation,
-            "features": feature_dict
+            "features": feature_dict,
             "image_url": url,
         }
     
