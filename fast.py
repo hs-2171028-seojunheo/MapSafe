@@ -16,8 +16,11 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 
-from google import genai
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
 
+from google import genai
 from extractors.extractor_yolo import YoloFeatureExtractor
 from extractors.extractor_segformer import SegFormerFeatureExtractor
 from extractors.extractor_opencv import OpenCVFeatureExtractor
@@ -28,14 +31,12 @@ load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 gemini_client = None
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 else:
     print("[Warning] GEMINI_API_KEY가 .env 파일에 설정되지 않았습니다.")
 
-# 2. FastAPI 초기화 및 CORS 설정
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -45,10 +46,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
 print("DEVICE:", DEVICE)
 
-# 3. 모델 로드 관련 함수 및 클래스
 image_transform = transforms.Compose([
     transforms.Resize((384, 384)),
     transforms.ToTensor(),
@@ -85,7 +87,7 @@ boring_model = load_perception_model("perception_models/boring.pth")
 depressing_model = load_perception_model("perception_models/depressing.pth")
 predictor = TabularPredictor.load("models")
 
-# 5. SHAP 중요도 CSV 데이터 로드 (서버 시작 시 1회만 실행)
+#SHAP 중요도 CSV 데이터 로드 (서버 시작 시 1회만 실행)
 shap_csv_path = Path("models/shap_global_importance.csv")
 model_rule_text = "별도의 SHAP 분석 데이터가 없습니다. 일반적인 도시 계획 상식을 바탕으로 분석합니다."
 
@@ -105,9 +107,11 @@ if shap_csv_path.exists():
 else:
     print("[System] ⚠️ models/shap_global_importance.csv 파일이 없어 기본 분석 모드로 동작합니다.")
 
+
 def get_score_from_output(output):
     if output.numel() == 1:
         return output.item()
+
     probs = torch.softmax(output, dim=1)
     return probs[0, 1].item()
 
@@ -137,7 +141,7 @@ def predict_perception(image):
         "depressing" : float(depressing)
     }
 
-# 6. Gemini API + SHAP 데이터 융합 XAI 리포트 생성 함수
+# Gemini API + SHAP 데이터 융합 XAI 리포트 생성 함수
 def generate_explanation_with_gemini(score: float, features: dict) -> str:
     """
     추출된 특징, 점수, 그리고 'SHAP CSV 분석 결과'를 모두 바탕으로
@@ -173,6 +177,20 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
     5. 보행자나 차량 등의 개수를 언급할 때는 소수점이 아닌 반드시 정수(자연수)로만 표현하세요. (예: 2.0대 -> 2대)
     6. 응답은 웹사이트에 바로 렌더링할 수 있도록 HTML 태그를 사용해주세요. 문단 구분에 <br>을 활용하고, 강조하고 싶은 핵심 명사나 특징에는 <b> 태그를 사용하세요.
     """
+
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-flash-latest',
+            contents=prompt
+        )
+        
+        # 마크다운 찌꺼기 제거
+        clean_text = response.text.replace("```html", "").replace("```", "").strip()
+        return clean_text
+    except Exception as e:
+        print(f"[Gemini API Error] {e}")
+        return "현재 AI 분석 서버에 일시적인 지연이 발생하여 상세 리포트를 불러올 수 없습니다."
+    
 
     try:
         response = gemini_client.models.generate_content(
@@ -271,8 +289,6 @@ def predict(lat: float, lng: float, heading: int = 0):
 
         score = predictor.predict(input_df).iloc[0]
         feature_dict = input_df.iloc[0].to_dict()
-        
-        # Gemini 호출
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
 
         return {
@@ -280,8 +296,8 @@ def predict(lat: float, lng: float, heading: int = 0):
             "lng": lng,
             "safety_score": float(score),
             "explanation": explanation,
-            "features": feature_dict,
             "image_url": url,
+            "features": feature_dict
         }
     
     finally:
@@ -324,10 +340,8 @@ async def predict_upload(file: UploadFile = File(...)):
 
         score = predictor.predict(input_df).iloc[0]
         feature_dict = input_df.iloc[0].to_dict()
-        
         # Gemini 호출
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
-
         return {
             "safety_score": float(score),
             "explanation": explanation,
