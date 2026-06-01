@@ -104,12 +104,13 @@ export default {
             return;
           }
 
+          // XAI 분석 결과가 포함된 향상된 인포윈도우
           infowindow.setContent(`
-            <div style="padding:10px; width:240px;">
-              <b>선택한 위치</b><br>
-              위도: ${lat.toFixed(6)}<br>
-              경도: ${lng.toFixed(6)}<br>
-              <hr>
+            <div style="padding:12px; width:290px; font-family: sans-serif; font-size:13px; line-height: 1.5;">
+              <b style="font-size:14px; color:#2c3e50;">📍 선택한 위치 분석</b><br>
+              <span style="color:#7f8c8d; font-size:11px;">위도: ${lat.toFixed(5)} / 경도: ${lng.toFixed(5)}</span>
+              <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
+              <b>안전 점수:</b> <span style="font-size:15px; font-weight:bold; color:#2e7d32;">${result.safety_score.toFixed(2)}점</span>
               <img
                 src="${imageUrl}"
                 style="
@@ -121,9 +122,9 @@ export default {
                   margin-bottom:8px;
                 "
               />
-              <b>안전 점수:</b> ${result.safety_score.toFixed(2)}점<br>
-              <br>
-            </div>
+              <div style="margin-top:10px; padding:8px; background:#f8f9fa; border-radius:4px; font-size:12px; color:#455a64; border-left:3px solid #0288d1;">
+                ${result.explanation}
+              </div>
           `);
 
         } catch (error) {
@@ -138,86 +139,98 @@ export default {
         }
       });
     },
-   async toggleWalkRoads() {
-    if (this.isWalkVisible) {
-      const currentCenter = this.map.getCenter();
-      const currentLevel = this.map.getLevel();
 
-      this.resetMap(currentCenter, currentLevel);
+    async toggleWalkRoads() {
+      if (this.isWalkVisible) {
+        const currentCenter = this.map.getCenter();
+        const currentLevel = this.map.getLevel();
+
+        this.resetMap(currentCenter, currentLevel);
+
+        this.walkPolylines = [];
+        this.isWalkVisible = false;
+        return;
+      }
+
+      await this.drawSafetyRoads();
+      this.isWalkVisible = true;
+    },
+
+    resetMap(center, level) {
+      const mapContainer = document.getElementById("map");
+      mapContainer.innerHTML = "";
+
+      const mapOption = {
+        center,
+        level,
+      };
+
+      this.map = new kakao.maps.Map(mapContainer, mapOption);
+    },
+
+    async drawSafetyRoads() {
+      const response = await fetch("/seongbuk_walk.geojson");
+      const geojson = await response.json();
 
       this.walkPolylines = [];
-      this.isWalkVisible = false;
-      return;
-    }
 
-    await this.drawSafetyRoads();
-    this.isWalkVisible = true;
-  },
+      geojson.features.forEach((feature) => {
+        if (!feature.geometry) return;
 
-  resetMap(center, level) {
-    const mapContainer = document.getElementById("map");
-    mapContainer.innerHTML = "";
+        const geometryType = feature.geometry.type;
+        const coordinates = feature.geometry.coordinates;
 
-    const mapOption = {
-      center,
-      level,
-    };
+        if (geometryType === "LineString") {
+          const path = coordinates.map((coord) => {
+            return new kakao.maps.LatLng(coord[0], coord[1]);
+          });
 
-    this.map = new kakao.maps.Map(mapContainer, mapOption);
-  },
+          const safeScore = feature.properties?.safeScore ?? 3.0;
 
-  async drawSafetyRoads() {
-    const response = await fetch("/seongbuk_walk.geojson");
-    const geojson = await response.json();
+          let strokeColor = "#00FF00";
+          if (safeScore < 2.5) {
+            strokeColor = "#FF0000";
+          }
+          else if (safeScore < 3.5) {
+            strokeColor = "#FFFF00";
+          }
+          else {
+            strokeColor = "#00FF00";
+          }
 
-    this.walkPolylines = [];
+          const polyline = new kakao.maps.Polyline({
+            path,
+            strokeWeight: 4,
+            strokeColor: strokeColor,
+            strokeOpacity: 0.8,
+            strokeStyle: "solid",
+          });
 
-    geojson.features.forEach((feature) => {
-      if (!feature.geometry) return;
-
-      const geometryType = feature.geometry.type;
-      const coordinates = feature.geometry.coordinates;
-
-      if (geometryType === "LineString") {
-        const path = coordinates.map((coord) => {
-          return new kakao.maps.LatLng(coord[0], coord[1]);
-        });
-
-        const safeScore = feature.properties?.safeScore ?? 3.0;
-
-        let strokeColor = "#00FF00";
-        if (safeScore < 2.5) {
-          strokeColor = "#FF0000";
+          polyline.setMap(this.map);
+          this.walkPolylines.push(polyline);
         }
-        else if (safeScore < 3.5) {
-          strokeColor = "#FFFF00";
-        }
-        else {
-          strokeColor = "#00FF00";
-        }
-
-        const polyline = new kakao.maps.Polyline({
-          path,
-          strokeWeight: 4,
-          strokeColor: strokeColor,
-          strokeOpacity: 0.8,
-          strokeStyle: "solid",
-        });
-
-        polyline.setMap(this.map);
-        this.walkPolylines.push(polyline);
-      }
-    });
-  },
+      });
+    },
   },
 }
 </script>
 
 <style>
+#mapContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
 #mapWrapper {
   position: relative;
-  width: 750px;
-  height: 350px;
+  width: 100%;
+  max-width: 1000px;
+  height: 600px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 #map {
@@ -237,5 +250,9 @@ export default {
   border-radius: 6px;
   cursor: pointer;
   font-weight: bold;
+}
+
+#walkBtn:hover {
+  background-color: #f0f0f0;
 }
 </style>
