@@ -180,21 +180,7 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
 
     try:
         response = gemini_client.models.generate_content(
-            model='gemini-flash-latest',
-            contents=prompt
-        )
-        
-        # 마크다운 찌꺼기 제거
-        clean_text = response.text.replace("```html", "").replace("```", "").strip()
-        return clean_text
-    except Exception as e:
-        print(f"[Gemini API Error] {e}")
-        return "현재 AI 분석 서버에 일시적인 지연이 발생하여 상세 리포트를 불러올 수 없습니다."
-    
-
-    try:
-        response = gemini_client.models.generate_content(
-            model='gemini-flash-latest',
+            model='gemini-2.5-flash',
             contents=prompt
         )
         
@@ -224,6 +210,7 @@ def predict(lat: float, lng: float, heading: int = 0):
         f"&heading={heading}"
         f"&pitch=0"
         f"&fov=90"
+        f"&source=outdoor"
         f"&key={GOOGLE_API_KEY}"
     )
 
