@@ -17,3 +17,7 @@ autogluon>=1.1.1
 
 # Utilities
 psutil>=5.9.0
+
+# Explainable AI & Visualization
+shap>=0.40.0
+matplotlib>=3.7.0

@@ -2,6 +2,11 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
+
 import requests
 from pathlib import Path
 from io import BytesIO
@@ -9,7 +14,6 @@ from PIL import Image
 import pandas as pd
 import torch
 import torch.nn as nn
-import shutil
 from torchvision import transforms
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -22,16 +26,12 @@ from extractors.extractor_segformer import SegFormerFeatureExtractor
 from extractors.extractor_opencv import OpenCVFeatureExtractor
 from autogluon.tabular import TabularPredictor
 
+# 1. 환경변수 로드 및 API 키 설정
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = None
-if GOOGLE_API_KEY:
-    gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
-else:
-    print("[Warning] GOOGLE_API_KEY가 .env 파일에 설정되지 않았습니다.")
-
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 else:
@@ -57,40 +57,25 @@ image_transform = transforms.Compose([
 ])
 
 class PerceptionModel(nn.Module):
-
     def __init__(self):
-
         super().__init__()
-
         self.backbone = torch.hub.load(
             "pytorch/vision:v0.10.0",
             "resnet18",
             pretrained=False
         )
-
-        self.backbone.fc = nn.Linear(
-            self.backbone.fc.in_features,
-            1
-        )
+        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 1)
 
     def forward(self, x):
-
         return self.backbone(x)
 
 def load_perception_model(path):
-    model = torch.load(
-        path,
-        map_location=DEVICE,
-        weights_only=False
-    )
-
+    model = torch.load(path, map_location=DEVICE, weights_only=False)
     model.to(DEVICE)
     model.eval()
-
     return model
 
-
-# 모델은 서버 시작 시 1번만 로드
+# 4. 서버 시작 시 각종 모델 1회 로드
 yolo_extractor = YoloFeatureExtractor(model_path="yolo11n.pt")
 segformer_extractor = SegFormerFeatureExtractor(device=None)
 opencv_extractor = OpenCVFeatureExtractor()
@@ -130,10 +115,8 @@ def get_score_from_output(output):
     probs = torch.softmax(output, dim=1)
     return probs[0, 1].item()
 
-
 def predict_perception(image):
     img_tensor = image_transform(image).unsqueeze(0).to(DEVICE)
-
     with torch.no_grad():
         safety_output = safety_model(img_tensor)
         lively_output = lively_model(img_tensor)
@@ -209,35 +192,42 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
         return "현재 AI 분석 서버에 일시적인 지연이 발생하여 상세 리포트를 불러올 수 없습니다."
     
 
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-flash-latest',
+            contents=prompt
+        )
+        
+        # 마크다운 찌꺼기 제거
+        clean_text = response.text.replace("```html", "").replace("```", "").strip()
+        return clean_text
+    except Exception as e:
+        print(f"[Gemini API Error] {e}")
+        return "현재 AI 분석 서버에 일시적인 지연이 발생하여 상세 리포트를 불러올 수 없습니다."
+    
+# 7. FastAPI 엔드포인트 설정
 @app.get("/")
 def root():
-    return {"message": "MapSafe FastAPI Server"}
-
+    return {"message": "MapSafe FastAPI Server with Gemini XAI"}
 
 @app.get("/predict")
-def predict(
-    lat: float,
-    lng: float,
-    heading: int = 0
-):
+def predict(lat: float, lng: float, heading: int = 0):
     temp_dir = Path("./temp-images")
     temp_dir.mkdir(exist_ok=True)
-
     image_name = "streetview.jpg"
     image_path = temp_dir / image_name
 
     url = (
-    "https://maps.googleapis.com/maps/api/streetview"
-    f"?size=640x640"
-    f"&location={lat},{lng}"
-    f"&heading={heading}"
-    f"&pitch=0"
-    f"&fov=90"
-    f"&key={GOOGLE_API_KEY}"
-)
+        "https://maps.googleapis.com/maps/api/streetview"
+        f"?size=640x640"
+        f"&location={lat},{lng}"
+        f"&heading={heading}"
+        f"&pitch=0"
+        f"&fov=90"
+        f"&key={GOOGLE_API_KEY}"
+    )
 
     response = requests.get(url)
-
     if "image" not in response.headers.get("content-type", ""):
         return {
             "error": "Street View image request failed",
@@ -248,14 +238,8 @@ def predict(
     try:
         image = Image.open(BytesIO(response.content)).convert("RGB")
         image.save(image_path)
-        #image.show()
 
-        # 1. YOLO feature 추출
         yolo_df = yolo_extractor.extract_from_directory(str(temp_dir))
-        #print("YOLO DF")
-        #print(yolo_df)
-
-        # 2. SegFormer feature 추출
         segformer_df = segformer_extractor.extract_from_directory(str(temp_dir))
         #print("SEGFORMER DF")
         #print(segformer_df)
@@ -295,21 +279,14 @@ def predict(
         #print("FEATURES DF")
         #print(features_df)
 
-        # 4. AutoGluon 입력에서는 image_filename 제거
         input_df = features_df.drop(columns=["image_filename"])
         required_cols = predictor.feature_metadata_in.get_features()
-        # 부족한 컬럼 자동 추가
+        
         for col in required_cols:
             if col not in input_df.columns:
                 input_df[col] = 0
-
-        # 컬럼 순서 맞추기
         input_df = input_df[required_cols]
 
-        #print("INPUT COLUMNS")
-        #print(input_df.columns.tolist())
-
-        # 5. 안전 점수 예측
         score = predictor.predict(input_df).iloc[0]
         feature_dict = input_df.iloc[0].to_dict()
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
@@ -331,7 +308,6 @@ def predict(
 async def predict_upload(file: UploadFile = File(...)):
     temp_dir = Path("./temp-images")
     temp_dir.mkdir(exist_ok=True)
-
     image_path = temp_dir / file.filename
 
     try:
@@ -347,7 +323,6 @@ async def predict_upload(file: UploadFile = File(...)):
         features_df = features_df.merge(opencv_df, on="image_filename", how="inner")
 
         perception_scores = predict_perception(image)
-
         features_df["safety"] = perception_scores["safety"]
         features_df["lively"] = perception_scores["lively"]
         features_df["wealthy"] = perception_scores["wealthy"]
@@ -356,13 +331,11 @@ async def predict_upload(file: UploadFile = File(...)):
         features_df["depressing"] = perception_scores["depressing"]
 
         input_df = features_df.drop(columns=["image_filename"])
-
         required_cols = predictor.feature_metadata_in.get_features()
 
         for col in required_cols:
             if col not in input_df.columns:
                 input_df[col] = 0
-
         input_df = input_df[required_cols]
 
         score = predictor.predict(input_df).iloc[0]
