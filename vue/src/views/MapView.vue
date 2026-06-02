@@ -2,7 +2,9 @@
    <div id="mapContainer">
     <div id="mapWrapper">
       <div id="map"></div>
-      <button id="walkBtn" @click="toggleWalkRoads">{{ isWalkVisible ? "도보 끄기" : "도보" }}</button>
+      <button id="walkBtn" :disabled="isWalkLoading" @click="toggleWalkRoads">
+        {{ isWalkLoading ? "처리 중..." : (isWalkVisible ? "도보 끄기" : "도보") }}
+      </button>
     </div>
     <div id="roadview"></div>
   </div>
@@ -15,6 +17,11 @@ export default {
       map: null,
       walkPolylines: [],
       isWalkVisible: false,
+      isWalkLoading: false,
+      marker: null,
+      infowindow: null,
+      roadview: null,
+      roadviewClient: null,
     };
   },
 
@@ -42,138 +49,150 @@ export default {
         level: 3,
       };
 
-      const map = new kakao.maps.Map(mapContainer, mapOption);
-      this.map = map;
-      const roadview = new kakao.maps.Roadview(roadviewContainer);
-      const roadviewClient = new kakao.maps.RoadviewClient();
+      this.map = new kakao.maps.Map(mapContainer, mapOption);
+      this.roadview = new kakao.maps.Roadview(roadviewContainer);
+      this.roadviewClient = new kakao.maps.RoadviewClient();
 
-      let marker = null;
-      let infowindow = null;
-
-      kakao.maps.event.addListener(map, "click", async (mouseEvent) => {
+      kakao.maps.event.addListener(this.map, "click", (mouseEvent) => {
         const latlng = mouseEvent.latLng;
         const lat = latlng.getLat();
         const lng = latlng.getLng();
 
-        if (marker) {
-          marker.setMap(null);
-        }
-
-        if (infowindow) {
-          infowindow.close();
-        }
-
-        marker = new kakao.maps.Marker({
-          position: latlng,
-          map: map,
-        });
-
-        infowindow = new kakao.maps.InfoWindow({
-          content: `
-            <div style="padding:10px; width:220px;">
-              <b>분석 중...</b><br>
-              위도: ${lat.toFixed(6)}<br>
-              경도: ${lng.toFixed(6)}
-            </div>
-          `,
-        });
-
-        infowindow.open(map, marker);
-
-        roadviewClient.getNearestPanoId(latlng, 50, function (panoId) {
-          if (panoId !== null) {
-            roadview.setPanoId(panoId, latlng);
-          }
-        });
-
-        try {
-          const response = await fetch(
-            `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`
-          );
-
-          const result = await response.json();
-          const imageUrl = result.image_url;
-
-          if (result.error) {
-            infowindow.setContent(`
-              <div style="padding:10px; width:220px;">
-                <b>분석 실패</b><br>
-                ${result.error}
-              </div>
-            `);
-            return;
-          }
-
-          // XAI 분석 결과가 포함된 향상된 인포윈도우
-          infowindow.setContent(`
-            <div style="padding:12px; width:290px; font-family: sans-serif; font-size:13px; line-height: 1.5;">
-              <b style="font-size:14px; color:#2c3e50;">📍 선택한 위치 분석</b><br>
-              <span style="color:#7f8c8d; font-size:11px;">위도: ${lat.toFixed(5)} / 경도: ${lng.toFixed(5)}</span>
-              <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
-              <b>안전 점수:</b> <span style="font-size:15px; font-weight:bold; color:#2e7d32;">${result.safety_score.toFixed(2)}점</span>
-              <img
-                src="${imageUrl}"
-                style="
-                  width:220px;
-                  height:120px;
-                  object-fit:cover;
-                  border-radius:8px;
-                  margin-top:8px;
-                  margin-bottom:8px;
-                "
-              />
-              <div style="margin-top:10px; padding:8px; background:#f8f9fa; border-radius:4px; font-size:12px; color:#455a64; border-left:3px solid #0288d1;">
-                ${result.explanation}
-              </div>
-          `);
-
-        } catch (error) {
-          console.error(error);
-
-          infowindow.setContent(`
-            <div style="padding:10px; width:220px;">
-              <b>서버 연결 오류</b><br>
-              FastAPI 서버를 확인하세요.
-            </div>
-          `);
-        }
+        const fetchUrl = `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
+        this.analyzeLocation(latlng, fetchUrl);
       });
     },
 
+    async analyzeLocation(latlng, fetchUrl) {
+      const lat = latlng.getLat();
+      const lng = latlng.getLng();
+
+      if (this.marker) {
+        this.marker.setMap(null);
+      }
+
+      if (this.infowindow) {
+        this.infowindow.close();
+      }
+
+      this.marker = new kakao.maps.Marker({
+        position: latlng,
+        map: this.map,
+      });
+
+      this.infowindow = new kakao.maps.InfoWindow({
+        content: `
+          <div style="padding:10px; width:220px;">
+            <b>분석 중...</b><br>
+            위도: ${lat.toFixed(6)}<br>
+            경도: ${lng.toFixed(6)}
+          </div>
+        `,
+      });
+
+      this.infowindow.open(this.map, this.marker);
+
+      this.roadviewClient.getNearestPanoId(latlng, 50, (panoId) => {
+        if (panoId !== null) {
+          this.roadview.setPanoId(panoId, latlng);
+        }
+      });
+
+      try {
+        const response = await fetch(fetchUrl);
+        const result = await response.json();
+        const imageUrl = result.image_url;
+
+        if (result.error) {
+          this.infowindow.setContent(`
+            <div style="padding:10px; width:220px;">
+              <b>분석 실패</b><br>
+              ${result.error}
+            </div>
+          `);
+          return;
+        }
+
+        // XAI 분석 결과가 포함된 향상된 인포윈도우
+        this.infowindow.setContent(`
+          <div style="padding:12px; width:290px; font-family: sans-serif; font-size:13px; line-height: 1.5;">
+            <b style="font-size:14px; color:#2c3e50;">📍 선택한 위치 분석</b><br>
+            <span style="color:#7f8c8d; font-size:11px;">위도: ${lat.toFixed(5)} / 경도: ${lng.toFixed(5)}</span>
+            <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
+            <b>안전 점수:</b> <span style="font-size:15px; font-weight:bold; color:#2e7d32;">${result.safety_score.toFixed(2)}점</span>
+            <img
+              src="${imageUrl}"
+              style="
+                width:220px;
+                height:120px;
+                object-fit:cover;
+                border-radius:8px;
+                margin-top:8px;
+                margin-bottom:8px;
+              "
+            />
+            <div style="margin-top:10px; padding:8px; background:#f8f9fa; border-radius:4px; font-size:12px; color:#455a64; border-left:3px solid #0288d1;">
+              ${result.explanation}
+            </div>
+          </div>
+        `);
+      } catch (error) {
+        console.error(error);
+        this.infowindow.setContent(`
+          <div style="padding:10px; width:220px;">
+            <b>서버 연결 오류</b><br>
+            FastAPI 서버를 확인하세요.
+          </div>
+        `);
+      }
+    },
+
     async toggleWalkRoads() {
-      if (this.isWalkVisible) {
-        const currentCenter = this.map.getCenter();
-        const currentLevel = this.map.getLevel();
-
-        this.resetMap(currentCenter, currentLevel);
-
-        this.walkPolylines = [];
-        this.isWalkVisible = false;
+      if (this.isWalkLoading) {
         return;
       }
 
-      await this.drawSafetyRoads();
-      this.isWalkVisible = true;
-    },
+      this.isWalkLoading = true;
+      if (this.isWalkVisible) {
+        try {
+          this.walkPolylines.forEach(polyline => polyline.setMap(null));
+          this.walkPolylines = [];
+          this.isWalkVisible = false;
+          return;
+        } finally {
+          this.isWalkLoading = false;
+        }
+      }
 
-    resetMap(center, level) {
-      const mapContainer = document.getElementById("map");
-      mapContainer.innerHTML = "";
-
-      const mapOption = {
-        center,
-        level,
-      };
-
-      this.map = new kakao.maps.Map(mapContainer, mapOption);
+      try {
+        await this.drawSafetyRoads();
+        this.isWalkVisible = true;
+      } finally {
+        this.isWalkLoading = false;
+      }
     },
 
     async drawSafetyRoads() {
+      // 1. GeoJSON 파일 로드
       const response = await fetch("/seongbuk_walk.geojson");
       const geojson = await response.json();
 
+      // 2. 백엔드에서 구간 단위 캐싱 데이터 로드
+      let apiData = [];
+      try {
+        const apiResponse = await fetch("http://127.0.0.1:8000/api/safety/all");
+        if (!apiResponse.ok) {
+          throw new Error(`캐싱 데이터 API 오류: ${apiResponse.status}`);
+        }
+        apiData = await apiResponse.json();
+      } catch (err) {
+        console.error("캐싱 데이터 로드 실패", err);
+      }
+
       this.walkPolylines = [];
 
+      // 3. 전체 도보 도로를 하나의 회색 멀티 경로로 렌더링
+      const grayPaths = [];
       geojson.features.forEach((feature) => {
         if (!feature.geometry) return;
 
@@ -185,31 +204,125 @@ export default {
             return new kakao.maps.LatLng(coord[0], coord[1]);
           });
 
-          const safeScore = feature.properties?.safeScore ?? 3.0;
-
-          let strokeColor = "#00FF00";
-          if (safeScore < 2.5) {
-            strokeColor = "#FF0000";
-          }
-          else if (safeScore < 3.5) {
-            strokeColor = "#FFFF00";
-          }
-          else {
-            strokeColor = "#00FF00";
-          }
-
-          const polyline = new kakao.maps.Polyline({
-            path,
-            strokeWeight: 4,
-            strokeColor: strokeColor,
-            strokeOpacity: 0.8,
-            strokeStyle: "solid",
-          });
-
-          polyline.setMap(this.map);
-          this.walkPolylines.push(polyline);
+          grayPaths.push(path);
         }
       });
+
+      this.addWalkPolyline(grayPaths, "#CCCCCC", (latlng) => {
+        const lat = latlng.getLat();
+        const lng = latlng.getLng();
+        return `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
+      });
+
+      // 4. DB에 분석값이 있는 정확한 구간을 색상별 멀티 경로로 덮어쓰기
+      const analyzedRoadsByColor = {};
+      apiData.forEach((item) => {
+        const coordinates = [
+          item.start_latitude,
+          item.start_longitude,
+          item.end_latitude,
+          item.end_longitude,
+          item.predicted_score,
+        ];
+
+        if (coordinates.some((value) => value == null || !Number.isFinite(Number(value)))) {
+          return;
+        }
+
+        const path = [
+          new kakao.maps.LatLng(item.start_latitude, item.start_longitude),
+          new kakao.maps.LatLng(item.end_latitude, item.end_longitude),
+        ];
+
+        const strokeColor = this.getScoreColor(item.predicted_score);
+        if (!analyzedRoadsByColor[strokeColor]) {
+          analyzedRoadsByColor[strokeColor] = [];
+        }
+        analyzedRoadsByColor[strokeColor].push({ item, path });
+      });
+
+      Object.entries(analyzedRoadsByColor).forEach(([strokeColor, roads]) => {
+        this.addWalkPolyline(
+          roads.map((road) => road.path),
+          strokeColor,
+          (latlng) => {
+            const observation = this.findNearestObservation(latlng, roads);
+            return `http://127.0.0.1:8000/api/safety/observations/${observation.id}`;
+          },
+          2,
+        );
+      });
+    },
+
+    getScoreColor(predictedScore) {
+      if (predictedScore < 2.5) {
+        return "#FF0000"; // 위험
+      }
+      if (predictedScore < 3.5) {
+        return "#FFFF00"; // 보통
+      }
+      return "#00FF00"; // 안전
+    },
+
+    findNearestObservation(latlng, roads) {
+      const latitude = latlng.getLat();
+      const longitude = latlng.getLng();
+      let nearestRoad = roads[0];
+      let nearestDistance = Infinity;
+
+      roads.forEach((road) => {
+        const item = road.item;
+        const distance = this.getSquaredDistanceToSegment(
+          latitude,
+          longitude,
+          Number(item.start_latitude),
+          Number(item.start_longitude),
+          Number(item.end_latitude),
+          Number(item.end_longitude),
+        );
+        if (distance < nearestDistance) {
+          nearestRoad = road;
+          nearestDistance = distance;
+        }
+      });
+
+      return nearestRoad.item;
+    },
+
+    getSquaredDistanceToSegment(pointLat, pointLng, startLat, startLng, endLat, endLng) {
+      const latDelta = endLat - startLat;
+      const lngDelta = endLng - startLng;
+      const segmentLength = latDelta * latDelta + lngDelta * lngDelta;
+      if (segmentLength === 0) {
+        return (pointLat - startLat) ** 2 + (pointLng - startLng) ** 2;
+      }
+
+      const ratio = Math.max(0, Math.min(1,
+        ((pointLat - startLat) * latDelta + (pointLng - startLng) * lngDelta) / segmentLength,
+      ));
+      const nearestLat = startLat + ratio * latDelta;
+      const nearestLng = startLng + ratio * lngDelta;
+      return (pointLat - nearestLat) ** 2 + (pointLng - nearestLng) ** 2;
+    },
+
+    addWalkPolyline(path, strokeColor, getFetchUrl, zIndex = 1) {
+      const polyline = new kakao.maps.Polyline({
+        path,
+        strokeWeight: 4,
+        strokeColor,
+        strokeOpacity: 0.8,
+        strokeStyle: "solid",
+        zIndex,
+      });
+
+      kakao.maps.event.addListener(polyline, "click", (mouseEvent) => {
+        kakao.maps.event.preventMap();
+        const latlng = mouseEvent.latLng;
+        this.analyzeLocation(latlng, getFetchUrl(latlng));
+      });
+
+      polyline.setMap(this.map);
+      this.walkPolylines.push(polyline);
     },
   },
 }
@@ -254,5 +367,10 @@ export default {
 
 #walkBtn:hover {
   background-color: #f0f0f0;
+}
+
+#walkBtn:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 </style>

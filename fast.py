@@ -1,6 +1,9 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from database.database_setup import SessionLocal
+from database.models import SafetyObservation
+from database.osmid import osmid_from_image_filename, osmid_image_filename_candidates
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -41,6 +44,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -140,6 +144,88 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
 @app.get("/")
 def root():
     return {"message": "MapSafe FastAPI Server with Gemini XAI"}
+
+# DB 세션 의존성 주입 함수
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/api/safety/all")
+def get_all_safety_data(db = Depends(get_db)):
+    """
+    지도 렌더링용 전체 데이터 조회 API
+    프론트엔드의 GeoJSON 도로선에 안전 점수를 매핑하기 위해 호출됩니다.
+    """
+    observations = db.query(SafetyObservation).all()
+    result = []
+    for obs in observations:
+        result.append({
+            "id": obs.id,
+            "osmid": obs.osmid or osmid_from_image_filename(obs.image_filename),
+            "latitude": obs.latitude,
+            "longitude": obs.longitude,
+            "start_latitude": obs.start_latitude,
+            "start_longitude": obs.start_longitude,
+            "end_latitude": obs.end_latitude,
+            "end_longitude": obs.end_longitude,
+            "predicted_score": obs.predicted_score if obs.predicted_score is not None else obs.safety_score
+        })
+    return result
+
+def build_safety_response(obs):
+    # SQLAlchemy 객체를 dict로 변환하여 피처 데이터로 활용
+    obs_dict = obs.__dict__.copy()
+    obs_dict.pop('_sa_instance_state', None)
+
+    score = obs.predicted_score if obs.predicted_score is not None else obs.safety_score
+    explanation = generate_explanation_with_gemini(float(score), obs_dict)
+
+    # 프론트엔드 정보창 렌더링 호환을 위해 구글 스트리트뷰 URL 생성
+    url = (
+        "https://maps.googleapis.com/maps/api/streetview"
+        f"?size=640x640"
+        f"&location={obs.latitude},{obs.longitude}"
+        f"&heading=0"
+        f"&pitch=0"
+        f"&fov=90"
+        f"&source=outdoor"
+        f"&key={GOOGLE_API_KEY}"
+    )
+
+    return {
+        "lat": obs.latitude,
+        "lng": obs.longitude,
+        "safety_score": float(score),
+        "explanation": explanation,
+        "image_url": url,
+        "features": obs_dict
+    }
+
+@app.get("/api/safety/observations/{observation_id}")
+def get_safety_by_observation_id(observation_id: int, db = Depends(get_db)):
+    obs = db.query(SafetyObservation).filter(SafetyObservation.id == observation_id).first()
+
+    if not obs:
+        raise HTTPException(status_code=404, detail="해당 도로 구간의 분석 데이터를 찾을 수 없습니다.")
+
+    return build_safety_response(obs)
+
+@app.get("/api/safety/{osmid}")
+def get_safety_by_osmid(osmid: str, db = Depends(get_db)):
+    """
+    캐싱된 도로 초고속 상세 조회 API
+    무거운 비전 AI 분석 과정을 생략하고, DB에 캐싱된 피처와 점수를 바탕으로 Gemini 설명만 실시간 생성합니다.
+    """
+    target_filenames = osmid_image_filename_candidates(osmid)
+    obs = db.query(SafetyObservation).filter(SafetyObservation.image_filename.in_(target_filenames)).first()
+
+    if not obs:
+        raise HTTPException(status_code=404, detail="해당 osmid의 분석 데이터를 찾을 수 없습니다.")
+
+    return build_safety_response(obs)
 
 @app.get("/predict")
 def predict(lat: float, lng: float, heading: int = 0):
