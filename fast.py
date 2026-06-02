@@ -7,8 +7,11 @@ from database.osmid import osmid_from_image_filename, osmid_image_filename_candi
 import os
 
 import requests
+import time
+from collections import OrderedDict
 from pathlib import Path
 from io import BytesIO
+from threading import Lock
 from PIL import Image
 import pandas as pd
 import torch
@@ -20,6 +23,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
 
 from google import genai
+from google.genai import types
 from extractors.extractor_yolo import YoloFeatureExtractor
 from extractors.extractor_segformer import SegFormerFeatureExtractor
 from extractors.extractor_opencv import OpenCVFeatureExtractor
@@ -32,9 +36,27 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = None
 if GEMINI_API_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(
+            timeout=30_000,
+            retry_options=types.HttpRetryOptions(
+                attempts=4,
+                initial_delay=1.0,
+                max_delay=8.0,
+                exp_base=2.0,
+                jitter=0.5,
+                http_status_codes=[408, 500, 502, 503, 504],
+            ),
+        ),
+    )
 else:
     print("[Warning] GEMINI_API_KEY가 .env 파일에 설정되지 않았습니다.")
+
+GEMINI_EXPLANATION_CACHE = OrderedDict()
+GEMINI_EXPLANATION_CACHE_LOCK = Lock()
+GEMINI_EXPLANATION_CACHE_LIMIT = 256
+GEMINI_FALLBACK_CACHE_TTL_SECONDS = 60
 
 app = FastAPI()
 app.add_middleware(
@@ -83,6 +105,92 @@ else:
     print("[System] ⚠️ models/shap_global_importance.csv 파일이 없어 기본 분석 모드로 동작합니다.")
 
 
+def get_cached_explanation(prompt: str):
+    with GEMINI_EXPLANATION_CACHE_LOCK:
+        cached_value = GEMINI_EXPLANATION_CACHE.get(prompt)
+        if cached_value is not None:
+            explanation, expires_at = cached_value
+            if expires_at is not None and expires_at <= time.monotonic():
+                del GEMINI_EXPLANATION_CACHE[prompt]
+                return None
+            GEMINI_EXPLANATION_CACHE.move_to_end(prompt)
+            return explanation
+        return None
+
+
+def cache_explanation(prompt: str, explanation: str, ttl_seconds=None):
+    expires_at = time.monotonic() + ttl_seconds if ttl_seconds is not None else None
+    with GEMINI_EXPLANATION_CACHE_LOCK:
+        GEMINI_EXPLANATION_CACHE[prompt] = (explanation, expires_at)
+        GEMINI_EXPLANATION_CACHE.move_to_end(prompt)
+        while len(GEMINI_EXPLANATION_CACHE) > GEMINI_EXPLANATION_CACHE_LIMIT:
+            GEMINI_EXPLANATION_CACHE.popitem(last=False)
+
+
+def get_numeric_feature(features: dict, key: str, default: float = 0.0) -> float:
+    value = features.get(key, default)
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def generate_local_explanation(score: float, features: dict) -> str:
+    vegetation = get_numeric_feature(features, "vegetation_ratio")
+    brightness = get_numeric_feature(features, "brightness_mean")
+    dark_area = get_numeric_feature(features, "dark_area_ratio")
+    car_count = int(get_numeric_feature(features, "car_count"))
+    truck_count = int(get_numeric_feature(features, "truck_count"))
+
+    environment_text = (
+        f"<b>식생 비율</b>이 {vegetation:.1f}%로 확인되어 보행 환경에 쾌적함을 더합니다."
+        if vegetation >= 15
+        else f"<b>식생 비율</b>이 {vegetation:.1f}%로 높지 않아 녹지 측면의 보완 여지가 있습니다."
+    )
+    brightness_text = (
+        f"<b>어두운 영역</b>이 {dark_area:.1f}%이고 평균 밝기는 {brightness:.1f}로, 조도 환경을 주의해서 살펴볼 필요가 있습니다."
+        if dark_area >= 20 or brightness < 90
+        else f"<b>어두운 영역</b>은 {dark_area:.1f}%이며 평균 밝기는 {brightness:.1f}로 확인됩니다."
+    )
+    traffic_text = (
+        f"사진에서 일반 차량 {car_count}대와 대형 차량 {truck_count}대가 감지되어 차량 통행에 유의해야 합니다."
+        if car_count + truck_count >= 3
+        else f"사진에서 일반 차량 {car_count}대와 대형 차량 {truck_count}대가 감지되었습니다."
+    )
+
+    return (
+        f"본 거리의 안전 점수는 5.0 만점에 {score:.2f}점입니다.<br><br>"
+        "<span style=\"color:#7f8c8d;\">상세 AI 리포트 연결이 지연되어 측정값을 기준으로 안내합니다.</span><br>"
+        f"{environment_text} {brightness_text} {traffic_text}"
+    )
+
+
+def is_daily_gemini_quota_error(error: Exception) -> bool:
+    return "GenerateRequestsPerDayPerProjectPerModel" in str(error)
+
+
+def request_gemini_explanation(prompt: str):
+    for attempt in range(2):
+        try:
+            return gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=700,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+        except Exception as error:
+            should_retry_rate_limit = (
+                getattr(error, "code", None) == 429
+                and not is_daily_gemini_quota_error(error)
+                and attempt == 0
+            )
+            if not should_retry_rate_limit:
+                raise
+            time.sleep(2)
+
+
 # Gemini API + SHAP 데이터 융합 XAI 리포트 생성 함수
 def generate_explanation_with_gemini(score: float, features: dict) -> str:
     """
@@ -90,7 +198,7 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
     Gemini API를 호출하여 정확한 XAI 리포트를 생성합니다.
     """
     if not gemini_client:
-        return "Gemini API 키가 설정되지 않아 AI 리포트를 생성할 수 없습니다."
+        return generate_local_explanation(score, features)
 
     prompt = f"""
     당신은 도시 환경 및 보행 안전도를 분석하는 전문가입니다.
@@ -123,18 +231,25 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
     6. 응답은 웹사이트에 바로 렌더링할 수 있도록 HTML 태그를 사용해주세요. 문단 구분에 <br>을 활용하고, 강조하고 싶은 핵심 명사나 특징에는 <b> 태그를 사용하세요.
     """
 
+    cached_explanation = get_cached_explanation(prompt)
+    if cached_explanation is not None:
+        return cached_explanation
+
     try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
+        response = request_gemini_explanation(prompt)
         
         # 마크다운 찌꺼기 제거
-        clean_text = response.text.replace("```html", "").replace("```", "").strip()
+        clean_text = (response.text or "").replace("```html", "").replace("```", "").strip()
+        if not clean_text:
+            raise ValueError("Gemini API가 비어 있는 응답을 반환했습니다.")
+        cache_explanation(prompt, clean_text)
         return clean_text
     except Exception as e:
-        print(f"[Gemini API Error] {e}")
-        return "현재 AI 분석 서버에 일시적인 지연이 발생하여 상세 리포트를 불러올 수 없습니다."
+        error_code = getattr(e, "code", "unknown")
+        print(f"[Gemini API Error] code={error_code} type={type(e).__name__}: {e}", flush=True)
+        fallback_explanation = generate_local_explanation(score, features)
+        cache_explanation(prompt, fallback_explanation, ttl_seconds=GEMINI_FALLBACK_CACHE_TTL_SECONDS)
+        return fallback_explanation
     
 # 7. FastAPI 엔드포인트 설정
 @app.get("/")
