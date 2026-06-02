@@ -6,10 +6,6 @@ from database.models import SafetyObservation
 from database.osmid import osmid_from_image_filename, osmid_image_filename_candidates
 import os
 
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
-
 import requests
 from pathlib import Path
 from io import BytesIO
