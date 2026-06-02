@@ -1,30 +1,77 @@
 <template>
-  <div class="photo_analysis">
-    <h1>사진 분석 서비스</h1>
+  <div class="photo-page">
+    <h2 class="page-title">사진 분석 서비스</h2>
+    <p class="page-subtitle">거리 사진을 업로드하여 안전도를 분석하고 위험 요소를 확인하세요.</p>
 
-    <input
-      type="file"
-      accept="image/png, image/jpeg"
-      @change="handleFileUpload"
-    />
+    <div class="upload-section">
+      <div class="upload-card">
+        <h3 class="card-heading">이미지 업로드</h3>
+        <p class="card-desc">JPG 또는 PNG 형식의 거리 이미지를 업로드해주세요.</p>
 
-    <p v-if="error" class="error">{{ error }}</p>
+        <label class="upload-box">
+          <input
+            type="file"
+            accept="image/png, image/jpeg"
+            @change="handleFileUpload"
+            hidden
+          />
+          <div class="upload-icon">⬆️</div>
+          <div class="upload-text">이미지를 드래그하거나 클릭하여 선택</div>
+          <div class="upload-hint">JPG, PNG (최대 10MB)</div>
+        </label>
 
-    <div v-if="preview">
-      <h3>미리보기</h3>
-      <img :src="preview" alt="preview" />
+        <p v-if="error" class="error">{{ error }}</p>
+      </div>
+
+      <div class="preview-card">
+        <div v-if="preview" class="preview-wrapper">
+          <img :src="preview" alt="preview" class="preview-img" />
+        </div>
+        <div v-else class="preview-placeholder">
+          <div class="placeholder-icon">🖼️</div>
+          <div>이미지를 업로드하여 분석을 시작하세요</div>
+        </div>
+      </div>
     </div>
-  </div>
-  
-  <p v-if="loading">분석 중...</p>
 
-  <div v-if="safetyScore !== null" class="result-container">
-    <h3>분석 결과</h3>
-    <p class="score-text">안전 점수: <span>{{ safetyScore.toFixed(2) }}</span> / 5.00</p>
-    
-    <div v-if="explanation" class="xai-box">
-      <h4>💡 AI 분석 근거 설명</h4>
-      <p v-html="explanation"></p>
+    <p v-if="loading" class="loading-text">분석 중...</p>
+
+    <div v-if="safetyScore !== null" class="result-container">
+      <h3>분석 결과</h3>
+      <p class="score-text">안전 점수: <span>{{ safetyScore.toFixed(2) }}</span> / 5.00</p>
+
+      <div v-if="explanation" class="xai-box">
+        <h4>💡 AI 분석 근거 설명</h4>
+        <p v-html="explanation"></p>
+      </div>
+    </div>
+
+    <!-- 주요 기능 카드 -->
+    <div class="features-card">
+      <h3 class="card-heading">주요 기능</h3>
+      <div class="features-row">
+        <div class="feature-item">
+          <div class="feature-icon feature-blue">⬆️</div>
+          <div>
+            <div class="feature-title">빠른 업로드</div>
+            <div class="feature-desc">드래그 앤 드롭으로 간편하게</div>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon feature-green">✅</div>
+          <div>
+            <div class="feature-title">실시간 분석</div>
+            <div class="feature-desc">5초 이내 결과 제공</div>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon feature-purple">❗</div>
+          <div>
+            <div class="feature-title">상세 분석</div>
+            <div class="feature-desc">객체 감지 및 위험도 평가</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -48,7 +95,6 @@ export default {
 
       if (!selectedFile) return;
 
-      // 파일 타입 검사
       const validTypes = ["image/png", "image/jpeg"];
 
       if (!validTypes.includes(selectedFile.type)) {
@@ -61,11 +107,10 @@ export default {
       this.error = "";
       this.file = selectedFile;
 
-      // 미리보기 생성
       this.preview = URL.createObjectURL(selectedFile);
       this.uploadImage();
     },
-    
+
     async uploadImage() {
       if (!this.file) return;
 
@@ -90,7 +135,7 @@ export default {
         const result = await response.json();
         this.safetyScore = result.safety_score;
         this.explanation = result.explanation;
-        
+
       } catch (err) {
         this.error = "사진 분석 중 오류가 발생했습니다.";
         console.error(err);
@@ -103,27 +148,139 @@ export default {
 </script>
 
 <style>
-.photo_analysis {
-  padding: 20px;
+.photo-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.page-subtitle {
+  font-size: 15px;
+  color: #64748b;
+  margin-bottom: 24px;
+}
+
+.upload-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.upload-card,
+.preview-card,
+.features-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.card-heading {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.card-desc {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 16px;
+}
+
+.upload-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 40px 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.upload-box:hover {
+  border-color: #3b82f6;
+  background: #f8fafc;
+}
+
+.upload-icon {
+  font-size: 28px;
+}
+
+.upload-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.upload-hint {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.preview-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.preview-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.preview-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.placeholder-icon {
+  font-size: 36px;
+  opacity: 0.5;
 }
 
 .error {
-  color: red;
-  margin-top: 10px;
+  color: #ef4444;
+  margin-top: 12px;
+  font-size: 14px;
 }
 
-img {
-  margin-top: 10px;
-  max-width: 300px;
-  border: 1px solid #ddd;
+.loading-text {
+  color: #3b82f6;
+  font-weight: 600;
+  margin-bottom: 16px;
 }
 
 .result-container {
-  margin-top: 20px;
-  padding: 15px;
-  background: #fdfdfd;
-  border-radius: 8px;
-  border: 1px solid #eaeaea;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
 }
 
 .score-text span {
@@ -151,5 +308,52 @@ img {
   font-size: 14px;
   color: #555;
   line-height: 1.6;
+}
+
+/* 주요 기능 */
+.features-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feature-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.feature-blue {
+  background: #eff6ff;
+}
+
+.feature-green {
+  background: #f0fdf4;
+}
+
+.feature-purple {
+  background: #faf5ff;
+}
+
+.feature-title {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 15px;
+}
+
+.feature-desc {
+  font-size: 13px;
+  color: #64748b;
 }
 </style>

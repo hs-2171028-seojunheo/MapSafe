@@ -1,12 +1,23 @@
 <template>
-  <div class="menu">
-    <button @click="toggleMenu">메뉴</button>
-
-    <div v-if="isOpen" class="dropdown">
-      <router-link to="/">지도</router-link>
-      <router-link to="/photo_analysis">사진 분석 서비스</router-link>
+  <header class="app-header">
+    <div class="logo">
+      <span class="logo-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4 5V11C4 16 7.5 20.5 12 22C16.5 20.5 20 16 20 11V5L12 2Z" fill="#2563eb"/>
+          <path d="M12 6.5L8 8V11.5C8 14.5 9.8 17 12 17.8C14.2 17 16 14.5 16 11.5V8L12 6.5Z" fill="white"/>
+        </svg>
+      </span>
+      <span class="logo-text">MapSafe</span>
     </div>
-  </div>
+    <nav class="nav-menu">
+      <router-link to="/" class="nav-item">
+        <span class="nav-icon">🗺️</span> 지도 서비스
+      </router-link>
+      <router-link to="/photo_analysis" class="nav-item">
+        <span class="nav-icon">📷</span> 사진 분석
+      </router-link>
+    </nav>
+  </header>
 </template>
 
 <script>
@@ -25,35 +36,65 @@ export default {
 </script>
 
 <style>
-.menu {
-  position: relative;
-  margin-bottom: 12px;
-}
-
-.menu button {
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-.dropdown {
-  position: absolute;
-  top: 38px;
-  left: 0;
-  width: 180px;
-  background: white;
-  border: 1px solid #ddd;
-  z-index: 10;
+.app-header {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 48px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-.dropdown a {
-  padding: 10px;
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-icon {
+  display: flex;
+  align-items: center;
+}
+
+.logo-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
   text-decoration: none;
-  color: black;
+  color: #475569;
+  font-weight: 500;
+  font-size: 15px;
+  transition: all 0.15s ease;
 }
 
-.dropdown a:hover {
-  background: #f2f2f2;
+.nav-item:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.nav-item.router-link-exact-active {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.nav-icon {
+  font-size: 16px;
 }
 </style>

@@ -1,12 +1,30 @@
 <template>
-   <div id="mapContainer">
-    <div id="mapWrapper">
-      <div id="map"></div>
-      <button id="walkBtn" :disabled="isWalkLoading" @click="toggleWalkRoads">
-        {{ isWalkLoading ? "처리 중..." : (isWalkVisible ? "도보 끄기" : "도보") }}
-      </button>
+  <div class="map-page">
+    <h2 class="page-title">안전 지도 서비스</h2>
+
+    <div id="mapContainer">
+      <div id="mapWrapper">
+        <div id="map"></div>
+        <button id="walkBtn" :disabled="isWalkLoading" @click="toggleWalkRoads">
+          {{ isWalkLoading ? "처리 중..." : (isWalkVisible ? "도보 끄기" : "도보") }}
+        </button>
+
+        <!-- 안전 수준 범례 -->
+        <div class="map-legend">
+          <div class="legend-title">안전 수준</div>
+          <div class="legend-row">
+            <span class="legend-dot" style="background:#ef4444;"></span> 위험
+          </div>
+          <div class="legend-row">
+            <span class="legend-dot" style="background:#eab308;"></span> 보통
+          </div>
+          <div class="legend-row">
+            <span class="legend-dot" style="background:#22c55e;"></span> 안전
+          </div>
+        </div>
+      </div>
+      <div id="roadview"></div>
     </div>
-    <div id="roadview"></div>
   </div>
 </template>
 
@@ -113,7 +131,6 @@ export default {
           return;
         }
 
-        // XAI 분석 결과가 포함된 향상된 인포윈도우
         this.infowindow.setContent(`
           <div style="padding:12px; width:290px; font-family: sans-serif; font-size:13px; line-height: 1.5;">
             <b style="font-size:14px; color:#2c3e50;">📍 선택한 위치 분석</b><br>
@@ -173,11 +190,9 @@ export default {
     },
 
     async drawSafetyRoads() {
-      // 1. GeoJSON 파일 로드
       const response = await fetch("/seongbuk_walk.geojson");
       const geojson = await response.json();
 
-      // 2. 백엔드에서 구간 단위 캐싱 데이터 로드
       let apiData = [];
       try {
         const apiResponse = await fetch("http://127.0.0.1:8000/api/safety/all");
@@ -191,7 +206,6 @@ export default {
 
       this.walkPolylines = [];
 
-      // 3. 전체 도보 도로를 하나의 회색 멀티 경로로 렌더링
       const grayPaths = [];
       geojson.features.forEach((feature) => {
         if (!feature.geometry) return;
@@ -214,7 +228,6 @@ export default {
         return `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
       });
 
-      // 4. DB에 분석값이 있는 정확한 구간을 색상별 멀티 경로로 덮어쓰기
       const analyzedRoadsByColor = {};
       apiData.forEach((item) => {
         const coordinates = [
@@ -256,12 +269,12 @@ export default {
 
     getScoreColor(predictedScore) {
       if (predictedScore < 2.5) {
-        return "#FF0000"; // 위험
+        return "#FF0000";
       }
       if (predictedScore < 3.5) {
-        return "#FFFF00"; // 보통
+        return "#FFFF00";
       }
-      return "#00FF00"; // 안전
+      return "#00FF00";
     },
 
     findNearestObservation(latlng, roads) {
@@ -329,6 +342,18 @@ export default {
 </script>
 
 <style>
+.map-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 20px;
+}
+
 #mapContainer {
   display: flex;
   flex-direction: column;
@@ -339,11 +364,11 @@ export default {
 #mapWrapper {
   position: relative;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1300px;
   height: 600px;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 #map {
@@ -353,24 +378,70 @@ export default {
 
 #walkBtn {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 16px;
+  left: 16px;
   z-index: 9999;
 
-  padding: 8px 14px;
+  padding: 9px 16px;
   background-color: white;
-  border: 1px solid #999;
-  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: bold;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
 }
 
 #walkBtn:hover {
-  background-color: #f0f0f0;
+  background-color: #f8fafc;
 }
 
 #walkBtn:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+/* 안전 수준 범례 */
+.map-legend {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+}
+
+.legend-title {
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: #475569;
+}
+
+.legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+#roadview {
+  width: 100%;
+  max-width: 1300px;
+  height: 350px;
+  margin-top: 20px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 </style>
