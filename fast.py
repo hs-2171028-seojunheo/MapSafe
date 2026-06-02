@@ -3,10 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
-
 import requests
 from pathlib import Path
 from io import BytesIO
