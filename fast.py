@@ -310,6 +310,7 @@ def build_safety_response(obs):
         "lat": obs.latitude,
         "lng": obs.longitude,
         "safety_score": float(score),
+        "analysis_basis": "cached_segment_4dir_average",
         "explanation": explanation,
         "image_url": url,
         "features": obs_dict
@@ -398,6 +399,7 @@ def predict(lat: float, lng: float, heading: int = 0):
             "lat": lat,
             "lng": lng,
             "safety_score": float(score),
+            "analysis_basis": "realtime_single_heading",
             "explanation": explanation,
             "image_url": url,
             "features": feature_dict
@@ -440,6 +442,7 @@ async def predict_upload(file: UploadFile = File(...)):
         explanation = generate_explanation_with_gemini(float(score), feature_dict)
         return {
             "safety_score": float(score),
+            "analysis_basis": "uploaded_image",
             "explanation": explanation,
             "features": feature_dict
         }
