@@ -8,6 +8,9 @@
         <button id="walkBtn" :disabled="isWalkLoading" @click="toggleWalkRoads">
           {{ isWalkLoading ? "처리 중..." : (isWalkVisible ? "도보 끄기" : "도보") }}
         </button>
+         <button id="locationBtn" @click="toggleCurrentLocation">
+          {{ currentMarker ? "현재 위치 끄기" : "현재 위치" }}
+        </button>
 
         <!-- 안전 수준 범례 -->
         <div class="map-legend">
@@ -38,6 +41,10 @@ export default {
       isWalkLoading: false,
       marker: null,
       infowindow: null,
+      currentLatLng: null,
+      nearbyPolylines: [],
+      currentMarker: null,
+      watchId: null,
       roadview: null,
       roadviewClient: null,
       analysisRequestId: 0,
@@ -55,6 +62,12 @@ export default {
       script.src = `https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=${KAKAO_KEY}`;
 
       document.head.appendChild(script);
+    }
+  },
+
+  beforeUnmount() {
+    if (this.watchId) {
+      navigator.geolocation.clearWatch(this.watchId);
     }
   },
 
@@ -84,6 +97,81 @@ export default {
         const fetchUrl = `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
         this.analyzeLocation(latlng, fetchUrl);
       });
+    },
+
+    startCurrentLocationTracking() {
+      if (!navigator.geolocation) {
+        alert("이 브라우저는 위치 정보를 지원하지 않습니다.");
+        return;
+      }
+
+      this.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+
+          const currentPosition = new kakao.maps.LatLng(lat, lng);
+          this.currentLatLng = currentPosition;
+
+          if (!this.currentMarker) {
+            const markerImage = new kakao.maps.MarkerImage(
+              "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png",
+              new kakao.maps.Size(24, 35)
+            );
+
+            this.currentMarker = new kakao.maps.Marker({
+              position: currentPosition,
+              map: this.map,
+              title: "현재 위치",
+              image: markerImage,
+              zIndex: 9999,
+            });
+            //테스트 this.map.setCenter(currentPosition);this.map.setLevel(2); 주석
+            this.map.setCenter(currentPosition);
+            this.map.setLevel(2);
+            this.drawNearbyRoads();
+          } else {
+            this.currentMarker.setPosition(currentPosition);
+          }
+        },
+        (error) => {
+          console.error("위치 오류:", error);
+          console.log("에러코드:", error.code);
+          console.log("에러메시지:", error.message);
+
+          if (error.code === error.PERMISSION_DENIED) {
+            alert("위치 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.");
+          } else {
+            alert("현재 위치를 가져올 수 없습니다.");
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 10000,
+        }
+      );
+    },
+
+    toggleCurrentLocation() {
+      if (this.currentMarker) {
+        this.currentMarker.setMap(null);
+        this.currentMarker = null;
+
+        if (this.watchId) {
+          navigator.geolocation.clearWatch(this.watchId);
+          this.watchId = null;
+        }
+        
+        this.nearbyPolylines.forEach(polyline => {
+          polyline.setMap(null);
+        });
+        this.currentLatLng = null;
+        this.nearbyPolylines = [];
+        return;
+      }
+
+      this.startCurrentLocationTracking();
     },
 
     async analyzeLocation(latlng, fetchUrl) {
@@ -306,6 +394,70 @@ export default {
       });
     },
 
+    async drawNearbyRoads() {
+      //테스트 if(!this.currentLatLng) 주석처리
+      if (!this.currentLatLng) {
+        console.warn("현재 위치가 아직 없습니다.");
+        return;
+      }
+      //테스트 성북구청 위치: 37.589372, 127.016745
+
+      const lat = this.currentLatLng.getLat();
+      const lng = this.currentLatLng.getLng();
+
+      let nearbyData = [];
+
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=80` //반경 설정
+        );
+
+        if (!response.ok) {
+          throw new Error(`nearby API 오류: ${response.status}`);
+        }
+
+        nearbyData = await response.json();
+        console.log("nearbyData 개수:", nearbyData.length);
+        console.log("nearbyData:", nearbyData);
+      } catch (error) {
+        console.error("주변 안전 데이터 로드 실패:", error);
+        return;
+      }
+
+      // 기존 주변 색칠 polyline만 제거
+      this.nearbyPolylines.forEach(polyline => {
+        polyline.setMap(null);
+      });
+      this.nearbyPolylines = [];
+      nearbyData.forEach((item) => {
+        if (
+          item.start_latitude == null ||
+          item.start_longitude == null ||
+          item.end_latitude == null ||
+          item.end_longitude == null
+        ) {
+          return;
+        }
+
+        const path = [
+          new kakao.maps.LatLng(item.start_latitude, item.start_longitude),
+          new kakao.maps.LatLng(item.end_latitude, item.end_longitude),
+        ];
+
+        const polyline = new kakao.maps.Polyline({
+          map: this.map,
+          path,
+          strokeWeight: 6,
+          strokeColor: this.getScoreColor(item.predicted_score),
+          strokeOpacity: 0.9,
+          strokeStyle: "solid",
+          zIndex: 10,
+        });
+
+        this.nearbyPolylines.push(polyline);
+      });
+    },
+
     getScoreColor(predictedScore) {
       if (predictedScore < 2.5) {
         return "#FF0000";
@@ -453,6 +605,22 @@ export default {
   opacity: 0.7;
 }
 
+#locationBtn {
+  position: absolute;
+  top: 54px;
+  left: 12px;
+  z-index: 9999;
+
+  padding: 8px 14px;
+  background-color: white;
+  border: 1px solid #999;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#locationBtn:hover {
+  background-color: #f0f0f0;
 /* 안전 수준 범례 */
 .map-legend {
   position: absolute;
