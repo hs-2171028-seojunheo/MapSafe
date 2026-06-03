@@ -621,6 +621,8 @@ export default {
 
 #locationBtn:hover {
   background-color: #f0f0f0;
+}
+
 /* 안전 수준 범례 */
 .map-legend {
   position: absolute;
