@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import requests
 from pathlib import Path
+from dotenv import load_dotenv
 
 # 경로에 맞게 수정 필요
 from extractors.extractor_yolo import YoloFeatureExtractor
@@ -12,6 +13,7 @@ from extractors.extractor_opencv import OpenCVFeatureExtractor
 from autogluon.tabular import TabularPredictor
 from database.osmid import build_segment_key, normalize_osmid
 
+load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 INPUT_CSV = "unique_coords_20m.csv"
 OUTPUT_CSV = "database/test_db.csv"  # DB에 넣을 최종 완성본
@@ -19,7 +21,7 @@ TEMP_IMG_DIR = "temp_4dir_images"    # 임시 이미지 저장 폴더
 MODEL_PATH = "models/" 
 
 # 테스트 모드 (전체 돌리려면 None)
-TEST_LIMIT = 50
+TEST_LIMIT = 1000
 
 def download_4dir_images(osmid, lat, lng, output_dir):
     """중앙 좌표에서 0, 90, 180, 270도 방향의 사진 4장을 다운받습니다."""
@@ -34,13 +36,24 @@ def download_4dir_images(osmid, lat, lng, output_dir):
         
         if not os.path.exists(img_path):
             url = f"https://maps.googleapis.com/maps/api/streetview?size=640x640&location={lat},{lng}&heading={h}&key={GOOGLE_API_KEY}&return_error_code=true"
-            res = requests.get(url)
-            if res.status_code == 200:
+            try:
+                res = requests.get(url, timeout=15)
+            except requests.RequestException as exc:
+                print(f"  [경고] {osmid}의 {h}도 사진 다운로드 실패: {exc}")
+                continue
+
+            content_type = res.headers.get("content-type", "")
+            if res.status_code == 200 and "image" in content_type:
                 with open(img_path, 'wb') as f:
                     f.write(res.content)
                 downloaded_paths.append(img_path)
             else:
-                print(f"  [경고] {osmid}의 {h}도 사진 다운로드 실패")
+                error_message = res.text[:300].replace("\n", " ")
+                print(
+                    f"  [경고] {osmid}의 {h}도 사진 다운로드 실패: "
+                    f"HTTP {res.status_code}, content-type={content_type}, "
+                    f"응답={error_message}"
+                )
         else:
             downloaded_paths.append(img_path)
             
@@ -69,6 +82,11 @@ def remove_dir(path: str) -> None:
         print(f"  [경고] 폴더 삭제 실패: {path} ({exc})")
 
 def process_pipeline():
+    if not GOOGLE_API_KEY:
+        raise RuntimeError(
+            "GOOGLE_API_KEY가 설정되지 않았습니다. .env 파일에 GOOGLE_API_KEY를 추가하세요."
+        )
+
     os.makedirs(TEMP_IMG_DIR, exist_ok=True)
     
     # 1. 대상 좌표 불러오기
@@ -152,21 +170,18 @@ def process_pipeline():
                 print(f"  [경고] 구간 {segment_key} 병합 결과가 비었습니다.")
                 continue
 
-            # 모델 입력 스키마에 맞게 정렬 후 예측
-            model_input_df = extracted_df.drop(columns=["image_filename"])
+            # 4방향 피처를 먼저 평균내어 구간 대표 벡터를 생성
+            averaged_features = extracted_df.drop(columns=["image_filename"]).mean().to_dict()
+            model_input_df = pd.DataFrame([averaged_features])
+
+            # 모델 입력 스키마에 맞게 정렬 후 구간별로 1회만 예측
             for col in required_features:
                 if col not in model_input_df.columns:
                     model_input_df[col] = 0
             model_input_df = model_input_df[required_features]
 
-            predictions = predictor.predict(model_input_df)
-            extracted_df["predicted_score"] = predictions.astype(float)
-            extracted_df["predicted_score"] = extracted_df["predicted_score"].clip(1.0, 5.0)
-
-            # 평균 계산 (4방향의 모든 수치를 더해서 4로 나눔)
-            averaged_features = extracted_df.drop(columns=["image_filename"]).mean().to_dict()
-            averaged_score = float(np.mean(extracted_df["predicted_score"]))
-            averaged_score = float(np.clip(averaged_score, 1.0, 5.0))
+            predicted_score = float(predictor.predict(model_input_df).iloc[0])
+            predicted_score = float(np.clip(predicted_score, 1.0, 5.0))
 
             # D. DB 스키마에 완벽하게 맞춘 1줄(Row) 데이터 생성
             db_row = {
@@ -196,9 +211,9 @@ def process_pipeline():
                 "dark_area_ratio": averaged_features.get("dark_area_ratio", 0.0),
                 "edge_density": averaged_features.get("edge_density", 0.0),
 
-                # 최종 안전도 점수 (평균값) - 모델 스키마에 따라 두 곳 모두 저장
-                "safety_score": averaged_score,
-                "predicted_score": averaged_score,
+                # 평균 피처 벡터로 1회 예측한 최종 안전도 점수
+                "safety_score": predicted_score,
+                "predicted_score": predicted_score,
             }
 
             final_db_rows.append(db_row)
