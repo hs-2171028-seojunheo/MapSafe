@@ -5,6 +5,7 @@ from database.database_setup import SessionLocal
 from database.models import SafetyObservation
 from database.osmid import osmid_from_image_filename, osmid_image_filename_candidates
 import os
+import math
 
 import requests
 import time
@@ -213,7 +214,6 @@ def generate_explanation_with_gemini(score: float, features: dict) -> str:
     - 가로수 및 식생 비율: {features.get('vegetation_ratio', 0):.1f}%
     - 하늘 개방감 비율: {features.get('sky_ratio', 0):.1f}%
     - 막힌 벽/담장 비율: {features.get('wall_ratio', 0):.1f}%
-    - 시각적 직관적 안전도(Perception): {features.get('safety', 3.0):.2f}점
     - 사진 전체 밝기(조도): {features.get('brightness_mean', 0):.1f}
     - 어두운 영역 비율: {features.get('dark_area_ratio', 0):.1f}%
     - 엣지(윤곽선) 밀도: {features.get('edge_density', 0):.1f}%
@@ -284,6 +284,45 @@ def get_all_safety_data(db = Depends(get_db)):
             "end_longitude": obs.end_longitude,
             "predicted_score": obs.predicted_score if obs.predicted_score is not None else obs.safety_score
         })
+    return result
+
+def haversine_m(lat1, lng1, lat2, lng2):
+    R = 6371000
+    lat1, lng1, lat2, lng2 = map(math.radians, [lat1, lng1, lat2, lng2])
+
+    dlat = lat2 - lat1
+    dlng = lng2 - lng1
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+
+@app.get("/api/safety/nearby")
+def get_nearby_safety_data(lat: float, lng: float, radius: float = 20, db=Depends(get_db)):
+    observations = db.query(SafetyObservation).all()
+
+    result = []
+    for obs in observations:
+        if obs.latitude is None or obs.longitude is None:
+            continue
+
+        distance = haversine_m(lat, lng, obs.latitude, obs.longitude)
+
+        if distance <= radius:
+            result.append({
+                "id": obs.id,
+                "latitude": obs.latitude,
+                "longitude": obs.longitude,
+                "start_latitude": obs.start_latitude,
+                "start_longitude": obs.start_longitude,
+                "end_latitude": obs.end_latitude,
+                "end_longitude": obs.end_longitude,
+                "predicted_score": obs.predicted_score if obs.predicted_score is not None else obs.safety_score,
+                "distance": distance
+            })
+
     return result
 
 def build_safety_response(obs):
