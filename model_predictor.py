@@ -76,8 +76,11 @@ class SafetyModelPredictor:
                 "Merged training data is empty. Check filename consistency between files."
             )
 
-        # Prevent data leakage by dropping image identifier before training.
-        training_df = merged_df.drop(columns=["image_filename"])
+        columns_to_drop = ["image_filename", "latitude", "longitude", "lat", "lng"] 
+        
+        existing_cols = [col for col in columns_to_drop if col in merged_df.columns]
+        training_df = merged_df.drop(columns=existing_cols)
+        
         return training_df
 
     def train(self, training_data: pd.DataFrame, time_limit: int = 300) -> TabularPredictor:
