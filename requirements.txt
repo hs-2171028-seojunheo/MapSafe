@@ -8,12 +8,12 @@ google-genai
 sqlalchemy
 psycopg2-binary
 
-torch>=2.3.0,<2.5
-torchvision>=0.18.0,<0.20
+torch==2.3.1
+torchvision==0.18.1
 
 ultralytics>=8.1.0
 
-transformers>=4.40.0
+transformers==4.40.2
 accelerate
 
 opencv-python-headless>=4.9.0
