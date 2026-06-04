@@ -1,35 +1,4 @@
-# Core ML frameworks (compatible versions)
-torch>=2.3.0,<2.5
-torchvision>=0.18.0,<0.20
-
-# Vision models & feature extraction
-ultralytics>=8.1.0
-transformers>=4.40.0
-opencv-python>=4.9.0
-
-# Data processing & ML
-numpy>=1.26.0
-pandas>=2.1.0
-scikit-learn>=1.4.0
-
-# AutoML
-autogluon>=1.1.1
-
-# Utilities
-psutil>=5.9.0
-
-# Explainable AI & Visualization
-shap>=0.40.0
-matplotlib>=3.7.0
-
 fastapi
 uvicorn[standard]
+python-dotenv
 requests
-google-genai
-autogluon.tabular
-sqlalchemy
-psycopg2-binary
-ultralytics
-transformers
-accelerate
-opencv-python-headless
