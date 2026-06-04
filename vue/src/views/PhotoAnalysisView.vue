@@ -43,34 +43,6 @@
         <p v-html="explanation"></p>
       </div>
     </div>
-
-    <!-- 주요 기능 카드 -->
-    <div class="features-card">
-      <h3 class="card-heading">주요 기능</h3>
-      <div class="features-row">
-        <div class="feature-item">
-          <div class="feature-icon feature-blue">⬆️</div>
-          <div>
-            <div class="feature-title">빠른 업로드</div>
-            <div class="feature-desc">드래그 앤 드롭으로 간편하게</div>
-          </div>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon feature-green">✅</div>
-          <div>
-            <div class="feature-title">실시간 분석</div>
-            <div class="feature-desc">5초 이내 결과 제공</div>
-          </div>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon feature-purple">❗</div>
-          <div>
-            <div class="feature-title">상세 분석</div>
-            <div class="feature-desc">객체 감지 및 위험도 평가</div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -183,13 +155,6 @@ export default {
 
 .upload-card,
 .preview-card,
-.features-card {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
 
 .card-heading {
   font-size: 17px;
@@ -316,52 +281,5 @@ export default {
   font-size: 14px;
   color: #555;
   line-height: 1.6;
-}
-
-/* 주요 기능 */
-.features-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.feature-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.feature-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.feature-blue {
-  background: #eff6ff;
-}
-
-.feature-green {
-  background: #f0fdf4;
-}
-
-.feature-purple {
-  background: #faf5ff;
-}
-
-.feature-title {
-  font-weight: 600;
-  color: #1e293b;
-  font-size: 15px;
-}
-
-.feature-desc {
-  font-size: 13px;
-  color: #64748b;
 }
 </style>
