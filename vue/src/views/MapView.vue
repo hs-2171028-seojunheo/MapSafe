@@ -26,7 +26,6 @@
           </div>
         </div>
       </div>
-      <div id="roadview"></div>
     </div>
   </div>
 </template>
@@ -45,8 +44,6 @@ export default {
       nearbyPolylines: [],
       currentMarker: null,
       watchId: null,
-      roadview: null,
-      roadviewClient: null,
       analysisRequestId: 0,
     };
   },
@@ -74,7 +71,6 @@ export default {
   methods: {
     initMap() {
       const mapContainer = document.getElementById("map");
-      const roadviewContainer = document.getElementById("roadview");
 
       const mapOption = {
         center: new kakao.maps.LatLng(37.589372, 127.016745),
@@ -82,8 +78,6 @@ export default {
       };
 
       this.map = new kakao.maps.Map(mapContainer, mapOption);
-      this.roadview = new kakao.maps.Roadview(roadviewContainer);
-      this.roadviewClient = new kakao.maps.RoadviewClient();
 
       kakao.maps.event.addListener(this.map, "click", (mouseEvent) => {
         if (this.isWalkVisible) {
@@ -213,12 +207,6 @@ export default {
       });
 
       this.infowindow.open(this.map, this.marker);
-
-      this.roadviewClient.getNearestPanoId(latlng, 50, (panoId) => {
-        if (panoId !== null) {
-          this.roadview.setPanoId(panoId, latlng);
-        }
-      });
 
       try {
         const response = await fetch(fetchUrl);
@@ -654,14 +642,5 @@ export default {
   height: 11px;
   border-radius: 50%;
   display: inline-block;
-}
-
-#roadview {
-  width: 100%;
-  max-width: 1300px;
-  height: 350px;
-  margin-top: 20px;
-  border-radius: 12px;
-  overflow: hidden;
 }
 </style>
