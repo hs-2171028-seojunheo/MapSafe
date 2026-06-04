@@ -268,14 +268,21 @@ def get_db():
         yield db
     finally:
         db.close()
+@app.get("/api/safety/bounds")
+def get_safety_by_bounds(
+    swLat: float,
+    swLng: float,
+    neLat: float,
+    neLng: float,
+    db=Depends(get_db)
+):
+    observations = db.query(SafetyObservation).filter(
+        SafetyObservation.latitude >= swLat,
+        SafetyObservation.latitude <= neLat,
+        SafetyObservation.longitude >= swLng,
+        SafetyObservation.longitude <= neLng
+    ).all()
 
-@app.get("/api/safety/all")
-def get_all_safety_data(db = Depends(get_db)):
-    """
-    지도 렌더링용 전체 데이터 조회 API
-    프론트엔드의 GeoJSON 도로선에 안전 점수를 매핑하기 위해 호출됩니다.
-    """
-    observations = db.query(SafetyObservation).all()
     result = []
     for obs in observations:
         result.append({
@@ -289,6 +296,7 @@ def get_all_safety_data(db = Depends(get_db)):
             "end_longitude": obs.end_longitude,
             "predicted_score": obs.predicted_score if obs.predicted_score is not None else obs.safety_score
         })
+
     return result
 
 def haversine_m(lat1, lng1, lat2, lng2):

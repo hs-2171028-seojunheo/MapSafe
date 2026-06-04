@@ -76,8 +76,13 @@ export default {
         center: new kakao.maps.LatLng(37.589372, 127.016745),
         level: 3,
       };
-
       this.map = new kakao.maps.Map(mapContainer, mapOption);
+      kakao.maps.event.addListener(this.map, "idle", () => {
+        if (this.isWalkVisible) {
+          this.clearWalkPolylines();
+          this.drawSafetyRoads();
+        }
+      });
 
       kakao.maps.event.addListener(this.map, "click", (mouseEvent) => {
         if (this.isWalkVisible) {
@@ -91,6 +96,14 @@ export default {
         const fetchUrl = `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
         this.analyzeLocation(latlng, fetchUrl);
       });
+    },
+
+    clearWalkPolylines() {
+      this.walkPolylines.forEach((polyline) => {
+        polyline.setMap(null);
+      });
+
+      this.walkPolylines = [];
     },
 
     startCurrentLocationTracking() {
@@ -323,7 +336,13 @@ export default {
 
       let apiData = [];
       try {
-        const apiResponse = await fetch("http://127.0.0.1:8000/api/safety/all");
+        const bounds = this.map.getBounds();
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+
+        const apiResponse = await fetch(
+          `http://127.0.0.1:8000/api/safety/bounds?swLat=${sw.getLat()}&swLng=${sw.getLng()}&neLat=${ne.getLat()}&neLng=${ne.getLng()}`
+        );
         if (!apiResponse.ok) {
           throw new Error(`캐싱 데이터 API 오류: ${apiResponse.status}`);
         }
@@ -405,7 +424,7 @@ export default {
 
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=500` //반경 설정
+          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=40` //반경 설정
         );
 
         if (!response.ok) {
