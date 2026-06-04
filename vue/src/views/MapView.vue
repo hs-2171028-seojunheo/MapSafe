@@ -31,6 +31,7 @@
 </template>
 
 <script>
+const API_URL = import.meta.env.VITE_API_URL;
 export default {
   data() {
     return {
@@ -93,7 +94,7 @@ export default {
         const lat = latlng.getLat();
         const lng = latlng.getLng();
 
-        const fetchUrl = `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
+        const fetchUrl = `${API_URL}/predict?lat=${lat}&lng=${lng}&heading=0`;
         this.analyzeLocation(latlng, fetchUrl);
       });
     },
@@ -340,7 +341,7 @@ export default {
         const ne = bounds.getNorthEast();
 
         const apiResponse = await fetch(
-          `http://127.0.0.1:8000/api/safety/bounds?swLat=${sw.getLat()}&swLng=${sw.getLng()}&neLat=${ne.getLat()}&neLng=${ne.getLng()}`
+          `${API_URL}/api/safety/bounds?swLat=${sw.getLat()}&swLng=${sw.getLng()}&neLat=${ne.getLat()}&neLng=${ne.getLng()}`
         );
         if (!apiResponse.ok) {
           throw new Error(`캐싱 데이터 API 오류: ${apiResponse.status}`);
@@ -402,7 +403,7 @@ export default {
           strokeColor,
           (latlng) => {
             const observation = this.findNearestObservation(latlng, roads);
-            return `http://127.0.0.1:8000/api/safety/observations/${observation.id}`;
+            return `${API_URL}/api/safety/observations/${observation.id}`;
           },
           2,
         );
@@ -421,7 +422,7 @@ export default {
 
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=40` //반경 설정
+          `${API_URL}/api/safety/nearby?lat=${lat}&lng=${lng}&radius=40` //반경 설정
         );
 
         if (!response.ok) {
