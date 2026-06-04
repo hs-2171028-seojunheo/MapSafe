@@ -268,14 +268,21 @@ def get_db():
         yield db
     finally:
         db.close()
+@app.get("/api/safety/bounds")
+def get_safety_by_bounds(
+    swLat: float,
+    swLng: float,
+    neLat: float,
+    neLng: float,
+    db=Depends(get_db)
+):
+    observations = db.query(SafetyObservation).filter(
+        SafetyObservation.latitude >= swLat,
+        SafetyObservation.latitude <= neLat,
+        SafetyObservation.longitude >= swLng,
+        SafetyObservation.longitude <= neLng
+    ).all()
 
-@app.get("/api/safety/all")
-def get_all_safety_data(db = Depends(get_db)):
-    """
-    지도 렌더링용 전체 데이터 조회 API
-    프론트엔드의 GeoJSON 도로선에 안전 점수를 매핑하기 위해 호출됩니다.
-    """
-    observations = db.query(SafetyObservation).all()
     result = []
     for obs in observations:
         result.append({
@@ -289,6 +296,7 @@ def get_all_safety_data(db = Depends(get_db)):
             "end_longitude": obs.end_longitude,
             "predicted_score": obs.predicted_score if obs.predicted_score is not None else obs.safety_score
         })
+
     return result
 
 def haversine_m(lat1, lng1, lat2, lng2):
@@ -359,6 +367,19 @@ def build_safety_response(obs):
         "image_url": url,
         "features": obs_dict
     }
+def check_streetview_available(lat: float, lng: float, radius: int = 50):
+    metadata_url = (
+        "https://maps.googleapis.com/maps/api/streetview/metadata"
+        f"?location={lat},{lng}"
+        f"&radius={radius}"
+        f"&source=outdoor"
+        f"&key={GOOGLE_API_KEY}"
+    )
+
+    response = requests.get(metadata_url)
+    data = response.json()
+
+    return data.get("status") == "OK", data
 
 @app.get("/api/safety/observations/{observation_id}")
 def get_safety_by_observation_id(observation_id: int, db = Depends(get_db)):
@@ -385,6 +406,13 @@ def get_safety_by_osmid(osmid: str, db = Depends(get_db)):
 
 @app.get("/predict")
 def predict(lat: float, lng: float, heading: int = 0):
+    available, metadata = check_streetview_available(lat, lng)
+
+    if not available:
+        return {
+            "available": False,
+            "message": "해당 위치에는 Google Street View 이미지가 없어 안전도 분석을 제공할 수 없습니다.",
+        }
     temp_dir = Path("./temp-images")
     temp_dir.mkdir(exist_ok=True)
     image_name = "streetview.jpg"

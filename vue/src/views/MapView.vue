@@ -13,7 +13,7 @@
         </button>
 
         <!-- 안전 수준 범례 -->
-        <div class="map-legend">
+        <div v-if="isWalkVisible || currentMarker" class="map-legend">
           <div class="legend-title">안전 수준</div>
           <div class="legend-row">
             <span class="legend-dot" style="background:#ef4444;"></span> 위험
@@ -26,7 +26,6 @@
           </div>
         </div>
       </div>
-      <div id="roadview"></div>
     </div>
   </div>
 </template>
@@ -45,8 +44,6 @@ export default {
       nearbyPolylines: [],
       currentMarker: null,
       watchId: null,
-      roadview: null,
-      roadviewClient: null,
       analysisRequestId: 0,
     };
   },
@@ -74,16 +71,18 @@ export default {
   methods: {
     initMap() {
       const mapContainer = document.getElementById("map");
-      const roadviewContainer = document.getElementById("roadview");
 
       const mapOption = {
         center: new kakao.maps.LatLng(37.589372, 127.016745),
         level: 3,
       };
-
       this.map = new kakao.maps.Map(mapContainer, mapOption);
-      this.roadview = new kakao.maps.Roadview(roadviewContainer);
-      this.roadviewClient = new kakao.maps.RoadviewClient();
+      kakao.maps.event.addListener(this.map, "idle", () => {
+        if (this.isWalkVisible) {
+          this.clearWalkPolylines();
+          this.drawSafetyRoads();
+        }
+      });
 
       kakao.maps.event.addListener(this.map, "click", (mouseEvent) => {
         if (this.isWalkVisible) {
@@ -97,6 +96,14 @@ export default {
         const fetchUrl = `http://127.0.0.1:8000/predict?lat=${lat}&lng=${lng}&heading=0`;
         this.analyzeLocation(latlng, fetchUrl);
       });
+    },
+
+    clearWalkPolylines() {
+      this.walkPolylines.forEach((polyline) => {
+        polyline.setMap(null);
+      });
+
+      this.walkPolylines = [];
     },
 
     startCurrentLocationTracking() {
@@ -127,8 +134,8 @@ export default {
               zIndex: 9999,
             });
             //테스트 this.map.setCenter(currentPosition);this.map.setLevel(2); 주석
-            this.map.setCenter(currentPosition);
-            this.map.setLevel(2);
+            //this.map.setCenter(currentPosition);
+            //this.map.setLevel(2);
             this.drawNearbyRoads();
           } else {
             this.currentMarker.setPosition(currentPosition);
@@ -214,15 +221,18 @@ export default {
 
       this.infowindow.open(this.map, this.marker);
 
-      this.roadviewClient.getNearestPanoId(latlng, 50, (panoId) => {
-        if (panoId !== null) {
-          this.roadview.setPanoId(panoId, latlng);
-        }
-      });
-
       try {
         const response = await fetch(fetchUrl);
         const result = await response.json();
+        if (result.available === false) {
+          this.infowindow.setContent(`
+            <div style="padding:10px; width:250px;">
+              <b>분석 불가</b><br>
+              ${result.message}
+            </div>
+          `);
+          return;
+        }
         const imageUrl = result.image_url;
         const analysisBasis = this.getAnalysisBasisLabel(result.analysis_basis);
         const analysisTitle = result.analysis_basis === "cached_segment_4dir_average"
@@ -326,7 +336,13 @@ export default {
 
       let apiData = [];
       try {
-        const apiResponse = await fetch("http://127.0.0.1:8000/api/safety/all");
+        const bounds = this.map.getBounds();
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+
+        const apiResponse = await fetch(
+          `http://127.0.0.1:8000/api/safety/bounds?swLat=${sw.getLat()}&swLng=${sw.getLng()}&neLat=${ne.getLat()}&neLng=${ne.getLng()}`
+        );
         if (!apiResponse.ok) {
           throw new Error(`캐싱 데이터 API 오류: ${apiResponse.status}`);
         }
@@ -401,7 +417,6 @@ export default {
         return;
       }
       //테스트 성북구청 위치: 37.589372, 127.016745
-
       const lat = this.currentLatLng.getLat();
       const lng = this.currentLatLng.getLng();
 
@@ -409,7 +424,7 @@ export default {
 
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=80` //반경 설정
+          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=40` //반경 설정
         );
 
         if (!response.ok) {
@@ -459,7 +474,7 @@ export default {
     },
 
     getScoreColor(predictedScore) {
-      if (predictedScore < 2.5) {
+      if (predictedScore <= 2.0) {
         return "#FF0000";
       }
       if (predictedScore < 3.5) {
@@ -655,14 +670,5 @@ export default {
   height: 11px;
   border-radius: 50%;
   display: inline-block;
-}
-
-#roadview {
-  width: 100%;
-  max-width: 1300px;
-  height: 350px;
-  margin-top: 20px;
-  border-radius: 12px;
-  overflow: hidden;
 }
 </style>
