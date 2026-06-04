@@ -3,23 +3,21 @@
     <h2 class="page-title">사진 분석 서비스</h2>
     <p class="page-subtitle">거리 사진을 업로드하여 안전도를 분석하고 위험 요소를 확인하세요.</p>
 
-    <div class="upload-section">
+    <div class="upload-section" >
       <div class="upload-card">
         <h3 class="card-heading">이미지 업로드</h3>
         <p class="card-desc">JPG 또는 PNG 형식의 거리 이미지를 업로드해주세요.</p>
-
-        <label class="upload-box">
-          <input
-            type="file"
-            accept="image/png, image/jpeg"
-            @change="handleFileUpload"
-            hidden
-          />
-          <div class="upload-icon">⬆️</div>
-          <div class="upload-text">이미지를 드래그하거나 클릭하여 선택</div>
-          <div class="upload-hint">JPG, PNG (최대 10MB)</div>
-        </label>
-
+          <label class="upload-box" @dragover.prevent @drop.prevent="handleDrop">
+            <input
+              type="file"
+              accept="image/png, image/jpeg"
+              @change="handleFileUpload"
+              hidden
+            />
+            <div class="upload-icon">⬆️</div>
+            <div class="upload-text">이미지를 드래그하거나 클릭하여 선택</div>
+            <div class="upload-hint">JPG, PNG (최대 10MB)</div>
+          </label>
         <p v-if="error" class="error">{{ error }}</p>
       </div>
 
@@ -90,14 +88,15 @@ export default {
   },
 
   methods: {
-    handleFileUpload(event) {
-      const selectedFile = event.target.files[0];
+    isValidImage(file) {
+      const allowedTypes = ["image/png", "image/jpeg"];
+      return allowedTypes.includes(file.type);
+    },
 
-      if (!selectedFile) return;
+    setImageFile(file) {
+      if (!file) return;
 
-      const validTypes = ["image/png", "image/jpeg"];
-
-      if (!validTypes.includes(selectedFile.type)) {
+      if (!this.isValidImage(file)) {
         this.error = "PNG 또는 JPG 파일만 업로드 가능합니다.";
         this.file = null;
         this.preview = null;
@@ -105,10 +104,20 @@ export default {
       }
 
       this.error = "";
-      this.file = selectedFile;
+      this.file = file;
+      this.preview = URL.createObjectURL(file);
 
-      this.preview = URL.createObjectURL(selectedFile);
       this.uploadImage();
+    },
+
+    handleFileUpload(event) {
+      const file = event.target.files[0];
+      this.setImageFile(file);
+    },
+
+    handleDrop(event) {
+      const file = event.dataTransfer.files[0];
+      this.setImageFile(file);
     },
 
     async uploadImage() {
@@ -133,16 +142,15 @@ export default {
         }
 
         const result = await response.json();
-        this.safetyScore = result.safety_score;
-        this.explanation = result.explanation;
-
+        this.safetyScore = Number(result.safety_score);
+        this.explanation = result.explanation || "";
       } catch (err) {
         this.error = "사진 분석 중 오류가 발생했습니다.";
         console.error(err);
       } finally {
         this.loading = false;
       }
-    }
+    },
   },
 };
 </script>
