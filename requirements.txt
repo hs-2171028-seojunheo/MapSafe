@@ -21,3 +21,15 @@ psutil>=5.9.0
 # Explainable AI & Visualization
 shap>=0.40.0
 matplotlib>=3.7.0
+
+fastapi
+uvicorn[standard]
+requests
+google-genai
+autogluon.tabular
+sqlalchemy
+psycopg2-binary
+ultralytics
+transformers
+accelerate
+opencv-python-headless
