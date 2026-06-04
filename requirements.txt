@@ -28,3 +28,8 @@ psutil>=5.9.0
 
 shap>=0.40.0
 matplotlib>=3.7.0
+
+pillow
+timm
+safetensors
+huggingface-hub
