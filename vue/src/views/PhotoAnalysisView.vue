@@ -47,6 +47,7 @@
 </template>
 
 <script>
+const API_URL = import.meta.env.VITE_API_URL;
 export default {
   data() {
     return {
@@ -104,7 +105,7 @@ export default {
       formData.append("file", this.file);
 
       try {
-        const response = await fetch("http://127.0.0.1:8000/predict-upload", {
+        const response = await fetch(`${API_URL}/predict-upload`, {
           method: "POST",
           body: formData,
         });
