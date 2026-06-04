@@ -13,7 +13,7 @@
         </button>
 
         <!-- 안전 수준 범례 -->
-        <div class="map-legend">
+        <div v-if="isWalkVisible || currentMarker" class="map-legend">
           <div class="legend-title">안전 수준</div>
           <div class="legend-row">
             <span class="legend-dot" style="background:#ef4444;"></span> 위험
@@ -127,8 +127,8 @@ export default {
               zIndex: 9999,
             });
             //테스트 this.map.setCenter(currentPosition);this.map.setLevel(2); 주석
-            this.map.setCenter(currentPosition);
-            this.map.setLevel(2);
+            //this.map.setCenter(currentPosition);
+            //this.map.setLevel(2);
             this.drawNearbyRoads();
           } else {
             this.currentMarker.setPosition(currentPosition);
@@ -401,7 +401,6 @@ export default {
         return;
       }
       //테스트 성북구청 위치: 37.589372, 127.016745
-
       const lat = this.currentLatLng.getLat();
       const lng = this.currentLatLng.getLng();
 
@@ -409,7 +408,7 @@ export default {
 
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=80` //반경 설정
+          `http://127.0.0.1:8000/api/safety/nearby?lat=${lat}&lng=${lng}&radius=500` //반경 설정
         );
 
         if (!response.ok) {
@@ -459,7 +458,7 @@ export default {
     },
 
     getScoreColor(predictedScore) {
-      if (predictedScore < 2.5) {
+      if (predictedScore <= 2.0) {
         return "#FF0000";
       }
       if (predictedScore < 3.5) {
