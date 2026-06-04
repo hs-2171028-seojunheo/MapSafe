@@ -1,212 +1,325 @@
-# 맵세이프
+# MapSafe
+
+MapSafe는 거리 이미지와 도로 구간 데이터를 기반으로 보행 환경의 안전도를 1점부터 5점까지 예측하고, 그 결과를 지도와 사진 분석 화면에서 설명 가능한 형태로 보여주는 빅데이터 캡스톤 디자인 프로젝트입니다.
+
+객체 탐지, 의미 분할, OpenCV 기반 시각 특징, AutoGluon 회귀 모델, SHAP 중요도, Gemini 기반 자연어 설명을 결합해 사용자가 특정 도로 구간이 왜 안전하거나 위험하게 평가되었는지 이해할 수 있도록 설계했습니다.
+
+## 핵심 기능
+
+| 기능 | 설명 |
+| --- | --- |
+| 실시간 도로 분석 | 지도에서 임의 위치를 클릭하면 Google Street View 이미지를 가져와 즉시 안전도를 예측합니다. |
+| 안전 지도 서비스 | Kakao Map 위에 성북구 도보 네트워크와 분석된 도로 구간을 색상으로 표시합니다. |
+| 도로 구간 상세 분석 | 지도에서 도로 구간을 클릭하면 DB에 캐싱된 4방향 Street View 평균 안전도와 설명을 보여줍니다. |
+| 사진 업로드 분석 | 사용자가 업로드한 거리 사진을 분석해 안전 점수와 AI 설명을 제공합니다. |
+| 설명 가능한 AI | SHAP 중요도와 추출 특징을 바탕으로 Gemini 또는 로컬 규칙 기반 설명을 생성합니다. |
+| DB 기반 캐싱 | 사전 분석된 도로 구간을 SQLAlchemy 모델로 저장해 지도 조회 속도를 높입니다. |
+
+## 전체 구조
+
+<img width="1369" height="789" alt="image" src="https://github.com/user-attachments/assets/d415be3e-49b0-4c6a-beee-96ce1ef30598" />
 
 
+## 기술 스택
 
+| 영역 | 사용 기술 |
+| --- | --- |
+| Frontend | Vue 3, Vite, Vue Router, Kakao Map API |
+| Backend | FastAPI, SQLAlchemy, python-dotenv |
+| Vision AI | Ultralytics YOLO11n, SegFormer Cityscapes, OpenCV |
+| ML/AutoML | AutoGluon Tabular Regression, PyTorch, scikit-learn |
+| XAI | SHAP, matplotlib, Gemini API |
+| External API | Google Street View Static API, Google Street View Metadata API |
+| Data | CSV, GeoJSON, SQLite 또는 DATABASE_URL로 지정한 DB |
 
-## 1. 프로젝트 개요
-
-MapSafe는 단일 비전 모델의 한계를 극복하기 위해 객체 탐지(YOLO) + 의미 분할(SegFormer) + 머신러닝(AutoGluon)을 결합한 하이브리드 안전도 예측 시스템입니다.
-
-이미지에서 다양한 특징을 추출한 뒤, 이를 기반으로 거리 안전도 점수 (1.0 ~ 5.0)를 예측합니다.
-
-특히 메모리(VRAM/RAM) 최적화를 위해 무거운 AI 모델들을 각각 독립된 프로세스(Microservice 구조)로 분리하여, 이미지에서 다양한 특징을 추출한 뒤 최종적으로 거리 안전도 점수 (1.0 ~ 5.0)를 예측합니다.
-
----
-
-## 2. 파이프라인 구조
-
-### Stage 1: 특징 추출 (Feature Extraction)
-
-- **YOLO11n (객체 탐지)**
-  - 사람, 차량, 트럭 개수 추출
-  - → `person_count`, `car_count`, `truck_count`
-
-- **SegFormer (의미론적 분할)**
-  - 환경 요소 픽셀 비율 계산
-  - → `road`, `building`, `wall`, `vegetation`, `sky`
-
----
-
-### Stage 2: 머신러닝 예측 (Regression)
-
-- **AutoGluon (Tabular Regression)**
-  - 총 8개 특징을 입력으로 사용
-  - 안전도 점수 예측 모델 학습
-  - 데이터 누수 방지를 위해 `image_filename` 제거
-
----
-
-## 3. 프로젝트 구조
+## 프로젝트 구조
 
 ```text
 MapSafe/
-├── main.py                     # 메인 파이프라인 (실행 진입점)
-├── model_predictor.py          # AutoGluon 머신러닝 예측 독립 모듈
-├── extractors/                 # 독립 특징추출 모듈들
-│   ├── extractor_yolo.py       # YOLO 객체 탐지 독립 모듈
-│   └── extractor_segformer.py  # SegFormer 의미 분할 독립 모듈
-├── preprocess/                 
-│   └── preprocess_survey.py    # 설문 조사 결과 전처리 스크립트
+├── README.md
+├── requirements.txt
+├── .gitignore
 │
-├── requirements.txt            # 의존성 패키지 목록
+├── fast.py                         # FastAPI 서버, 예측 API, XAI 설명 생성
+├── main.py                         # 기본 학습 파이프라인: YOLO + SegFormer + AutoGluon
+├── model_predictor.py              # AutoGluon 학습, 평가, 예측, SHAP 산출
+├── build_final_db.py               # Street View 4방향 분석 후 DB 적재용 CSV 생성
+├── Model_01.py                     # ViT 기반 실험 모델 정의
 │
-├── images/                     # 평가 대상 이미지 폴더
-├── ground_truth.csv            # 정답 데이터
+├── extractors/
+│   ├── extractor_yolo.py           # 사람, 차량, 트럭 객체 수 추출
+│   ├── extractor_segformer.py      # 도시 장면 의미 분할 비율 추출
+│   └── extractor_opencv.py         # 밝기, 어두운 영역, 엣지 밀도 추출
 │
-├── yolo_features.csv           # YOLO 추출 결과 (자동 생성)
-├── segformer_features.csv      # SegFormer 추출 결과 (자동 생성)
-├── extracted_features.csv      # 두 특징이 병합된 최종 데이터 (자동 생성)
-└── models/                     # 학습이 완료된 모델 저장 폴더 (출력)
+├── database/
+│   ├── database_setup.py           # DATABASE_URL 기반 DB 연결 설정
+│   ├── models.py                   # safety_observations 테이블 스키마
+│   ├── osmid.py                    # OSM ID 및 segment_key 정규화 유틸
+│   └── import_observations.py      # CSV를 DB에 적재하는 CLI
+│
+├── preprocess/
+│   └── preprocess_survey.py        # 설문 결과를 ground_truth.csv로 변환
+│
+└── vue/
+    ├── package.json
+    ├── vite.config.js
+    ├── public/
+    │   └── seongbuk_walk.geojson   # 성북구 도보 네트워크 GeoJSON
+    └── src/
+        ├── App.vue
+        ├── main.js
+        ├── router/index.js
+        ├── components/Menu.vue
+        └── views/
+            ├── MapView.vue         # 지도, 도로 안전도 오버레이, Roadview
+            └── PhotoAnalysisView.vue
 ```
 
----
+## 주요 데이터 흐름
 
-## 4. 동작 흐름 (Data Flow)
+### 1. 모델 학습용 데이터 생성
 
-본 프로젝트는 메모리 해제(OOM 방지)를 위해 main.py가 각 추출기를 subprocess로 호출하여 OS 레벨에서 메모리를 완전히 격리합니다.
+1. `images/` 폴더에 거리 이미지를 준비합니다.
+2. 설문 기반 정답 파일 `ground_truth.csv`를 준비합니다.
+3. YOLO와 SegFormer가 이미지별 특징 CSV를 생성합니다.
+4. `main.py`가 두 CSV를 `image_filename` 기준으로 병합해 `extracted_features.csv`를 만듭니다.
+5. `model_predictor.py`가 `extracted_features.csv`와 `ground_truth.csv`를 병합해 AutoGluon 회귀 모델을 학습합니다.
+6. 학습 결과는 `models/`에 저장되고, SHAP 결과는 `models/shap_global_importance.csv`, `models/shap_local_values.csv`, `models/shap_summary.png`로 저장됩니다.
 
-1. **입력 데이터 준비**
-   - `images/` 폴더에 거리 이미지 저장
-   - `ground_truth.csv`에 이미지별 안전도 점수 정의
+### 2. 서비스용 도로 DB 생성
 
-2. **YOLO 특징 추출**
-   - extractor_yolo.py 실행 → yolo_features.csv 산출 후 메모리 완전 해제
+1. `unique_coords_20m.csv`에서 도로 구간의 시작점, 끝점, 중간점 좌표를 읽습니다.
+2. `build_final_db.py`가 각 구간의 중간점 기준으로 Street View 4방향 이미지를 다운로드합니다.
+3. 각 이미지에서 YOLO, SegFormer, OpenCV 특징을 추출합니다.
+4. 4방향 특징을 평균해 한 도로 구간의 대표 특징 벡터를 만듭니다.
+5. AutoGluon 모델로 최종 안전도를 예측합니다.
+6. `database/test_db.csv`를 생성한 뒤 `database/import_observations.py`로 DB에 적재할 수 있습니다.
 
-3. **SegFormer 특징 추출**
-   - extractor_segformer.py 실행 → segformer_features.csv 산출 후 메모리 완전 해제
+### 3. 사용자 서비스 흐름
 
-4. **CSV 특징 병합**
-   - 두 CSV 파일을 image_filename 기준으로 데이터를 결합하여 extracted_features.csv 생성
-  
-5. **모델 학습**
-   - model_predictor.py 실행 → AutoGluon 회귀 모델 학습 후 models/ 에 저장
+1. Vue 프론트엔드가 Kakao Map과 Roadview를 렌더링합니다.
+2. 사용자가 도보 레이어를 켜면 `/api/safety/all`에서 캐시된 도로 안전도 데이터를 받아옵니다.
+3. 도로 구간은 점수 기준으로 위험, 보통, 안전 색상으로 표시됩니다.
+4. 사용자가 구간을 클릭하면 `/api/safety/observations/{id}`에서 상세 점수와 설명을 조회합니다.
+5. 사용자가 임의 지도 위치를 클릭하면 `/predict`가 Street View 단일 방향 이미지를 실시간 분석합니다.
+6. 사용자가 사진을 업로드하면 `/predict-upload`가 업로드 이미지를 실시간 분석합니다.
 
----
+## 추출 특징
 
-## 5. 필수 데이터 포맷 명세
+| 특징 | 타입 | 의미 | 추출 모듈 |
+| --- | --- | --- | --- |
+| `person_count` | Integer | 이미지 내 보행자 수 | YOLO11n |
+| `car_count` | Integer | 이미지 내 일반 차량 수 | YOLO11n |
+| `truck_count` | Integer | 이미지 내 대형 차량 수 | YOLO11n |
+| `road_ratio` | Float | 전체 이미지 대비 도로 픽셀 비율 | SegFormer |
+| `building_ratio` | Float | 전체 이미지 대비 건물 픽셀 비율 | SegFormer |
+| `wall_ratio` | Float | 전체 이미지 대비 벽/담장 픽셀 비율 | SegFormer |
+| `vegetation_ratio` | Float | 전체 이미지 대비 식생 픽셀 비율 | SegFormer |
+| `sky_ratio` | Float | 전체 이미지 대비 하늘 픽셀 비율 | SegFormer |
+| `brightness_mean` | Float | 흑백 변환 후 평균 밝기 | OpenCV |
+| `dark_area_ratio` | Float | 어두운 픽셀 영역 비율 | OpenCV |
+| `edge_density` | Float | Canny edge 기준 윤곽선 밀도 | OpenCV |
 
-### 5.1 이미지 폴더 (/images/)
-- 평가 대상이 되는 도시 거리 사진을 저장합니다.
-- 형식: .jpg, .jpeg, .png
-- 최소 해상도: 128x128 이상 권장
+## 안전 점수 기준
 
-### 5.2 정답 데이터 (ground_truth.csv)
-모델 학습의 정답지가 되는 파일입니다. images/ 폴더 내의 파일명과 1:1 매칭되어야 합니다.
-- 구조 예시
-  ```csv
-    image_filename,safety_score
-    street_01.jpg,4.5
-    street_02.jpg,3.2
+모델은 1.0부터 5.0까지의 연속형 안전 점수를 예측합니다. 지도에서는 프론트엔드 기준에 따라 다음과 같이 표시합니다.
 
-### 5.3 특징 데이터 (extracted_features.csv)
-- main.py 실행 시, 각 독립 모듈에서 생성된 YOLO 결과와 SegFormer 결과를 image_filename을 기준으로 결합(Inner Join)하여 자동 생성되는 중간 데이터 파일입니다.
+| 점수 구간 | 지도 색상 | 해석 |
+| --- | --- | --- |
+| 1.0 이상 2.0 미만 | 빨강 | 위험 |
+| 2.5 이상 3.5 미만 | 노랑 | 보통 |
+| 3.5 이상 5.0 이하 | 초록 | 안전 |
 
-| 컬럼명 | 타입 | 설명 | 추출 모델 |
-|--------|------|------|-----------|
-| image_filename | String | 분석 대상 이미지 파일명 (고유 Key) | - |
-| person_count | Integer | 이미지 내 감지된 보행자 수 (자연 감시 인자) | YOLO11n |
-| car_count | Integer | 이미지 내 감지된 승용차 수 (도로 활력 인자) | YOLO11n |
-| truck_count | Integer | 이미지 내 감지된 대형차/트럭 수 (위험/시야 방해 인자) | YOLO11n |
-| road_ratio | Float (%) | 전체 이미지 대비 도로 면적 비율 | SegFormer |
-| building_ratio | Float (%) | 전체 이미지 대비 건물 면적 비율 (밀도 인자) | SegFormer |
-| wall_ratio | Float (%) | 전체 이미지 대비 벽/담장 면적 비율 (폐쇄성 인자) | SegFormer |
-| vegetation_ratio | Float (%) | 전체 이미지 대비 식생(나무, 풀) 면적 비율 | SegFormer |
-| sky_ratio | Float (%) | 전체 이미지 대비 하늘 면적 비율 (개방감 인자) | SegFormer |
+## 설치 및 실행
 
----
+### 1. Python 환경 준비
 
-## 6. 실행 방법
+AutoGluon과 PyTorch 호환성을 위해 Python 3.10 또는 3.11 사용을 권장합니다.
 
-
-### 6.1 권장 사양
-
-- Python 버전: 3.10 또는 3.11 (AutoGluon 안정성 및 라이브러리 호환성 권장)
-- 가상 환경: venv 또는 conda 사용 권장
-
-### 6.2 플랫폼별 설정
-
-#### Windows
 ```bash
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+pip install fastapi uvicorn sqlalchemy python-dotenv requests pillow google-genai python-multipart openpyxl pandas geopandas shapely psycopg2-binary
+
 ```
 
-#### macOS 
+macOS에서 LightGBM 오류가 발생하면 `libomp`가 필요할 수 있습니다.
+
 ```bash
-# 시스템 라이브러리 설치 (필수)
 brew install libomp
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
 ```
 
-### 6.3  실행
+### 2. 환경 변수 설정
+
+프로젝트 루트에 `.env` 파일을 생성합니다.
+
+```env
+DATABASE_URL=postgresql:///./mapsafe.db
+GOOGLE_API_KEY=your_google_streetview_api_key
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+`GEMINI_API_KEY`가 없으면 FastAPI 서버는 Gemini 호출 대신 로컬 규칙 기반 설명을 반환합니다.
+
+프론트엔드의 Kakao Map 사용을 위해 `vue/.env` 파일을 생성합니다.
+
+```env
+VITE_KAKAO_MAP_KEY=your_kakao_javascript_key
+```
+
+### 3. 모델 학습
+
+이미지와 정답 파일이 준비되어 있다면 기본 학습 파이프라인을 실행합니다.
+
 ```bash
-# 전체 파이프라인 (추출부터 학습까지)
 python main.py
-
-# 테스트 실행
-python test.py
 ```
 
----
+이 명령은 다음 파일과 폴더를 생성합니다.
 
-## 7. 모듈별 개별 사용법 (API)
+| 산출물 | 설명 |
+| --- | --- |
+| `yolo_features.csv` | YOLO 객체 수 특징 |
+| `segformer_features.csv` | SegFormer 의미 분할 비율 |
+| `extracted_features.csv` | 학습용 병합 특징 |
+| `models/` | AutoGluon 모델 아티팩트 |
+| `models/shap_global_importance.csv` | 전역 SHAP 중요도 |
+| `models/shap_local_values.csv` | 샘플별 SHAP 값 |
+| `models/shap_summary.png` | SHAP 요약 이미지 |
 
-### 7.1 이미지 특징만 개별로 추출하기
+설문 원본 엑셀 파일을 정답 CSV로 변환하려면 다음을 실행합니다.
 
-```python
-from extractors.extractor_yolo import YoloFeatureExtractor
-from extractors.extractor_segformer import SegFormerFeatureExtractor
-
-# YOLO 추출기 단독 사용
-yolo_ext = YoloFeatureExtractor()
-yolo_df = yolo_ext.extract_from_directory('./images/')
-
-# SegFormer 추출기 단독 사용
-seg_ext = SegFormerFeatureExtractor()
-seg_df = seg_ext.extract_from_directory('./images/')
+```bash
+python preprocess/preprocess_survey.py
 ```
 
-### 7.2 새로운 데이터 안전도 예측하기
+### 4. DB 생성 및 적재
 
-```python
-import pandas as pd
-from model_predictor import SafetyModelPredictor
+서비스 지도에서 빠른 구간 조회를 하려면 사전 분석 DB가 필요합니다.
 
-predictor = SafetyModelPredictor('./extracted_features.csv', './ground_truth.csv', './models/')
-# (학습 완료 가정)
-
-new_features = pd.DataFrame({
-    'person_count': [2], 'car_count': [1], 'truck_count': [0],
-    'road_ratio': [45.5], 'building_ratio': [28.3], 'wall_ratio': [5.1],
-    'vegetation_ratio': [12.2], 'sky_ratio': [9.0]
-})
-
-predictions = predictor.predict(new_features)
-print(f"예측된 안전 점수: {predictions[0]:.2f}")
+```bash
+python build_final_db.py
+python database/import_observations.py --csv database/test_db.csv --source streetview_4dir --split full --replace
 ```
----
 
-## 8. 자주 발생하는 에러 (Troubleshooting)
+`build_final_db.py`는 Google Street View API를 사용하므로 `GOOGLE_API_KEY`, 결제 설정, API 사용량 제한을 확인해야 합니다. Street View가 없는 구간은 `database/skipped_segments.csv`에 기록됩니다.
 
-### 일반 에러
+### 5. 백엔드 서버 실행
 
-| 에러 메시지 | 원인 | 해결 방법 |
-|------------|------|-----------|
-| CUDA out of memory | GPU 메모리 부족 | 개별 모듈에서 `device='cpu'`로 강제 지정 |
-| No image files found | 이미지 폴더가 비어 있음 | `images/` 폴더에 `.jpg`, `.png` 이미지 추가 |
-| Merge failed / Empty DataFrame | CSV 파일 간 불일치 | 각 CSV 파일에 동일한 `image_filename` 존재 여부 확인 |
-| Import fastai failed | 일부 모델 의존성 누락 | 무시 가능 (다른 트리 기반 모델이 자동 사용됨) |
-| psutil module not found | 메모리 로깅 라이브러리 누락 | `pip install psutil` 실행 |
+```bash
+uvicorn fast:app --reload --host 127.0.0.1 --port 8000
+```
 
-### macOS 특화 에러
+서버가 정상 실행되면 다음 주소에서 상태를 확인할 수 있습니다.
 
-| 에러 메시지 | 원인 | 해결 방법 |
-|------------|------|-----------|
-| LightGBMError | macOS에 LightGBM 구동을 위한 핵심 라이브러리(libomp) 미설치 | `brew install libomp` 실행 후 패키지 재설치 |
-| ImportError | AutoGluon과 PyTorch 버전 간의 호환성 충돌 (주로 Python 3.12) | 파이썬 버전을 3.10 또는 3.11로 변경 및 `torch>=2.3.0 설치` |
-| RuntimeError | Apple Silicon 기기 메모리 부족으로 인한 프로세스 강제 종료 | `main.py` 파이프라인을 사용하여 프로세스 격리 실행 |
-| ReadTimeoutError / transformers download timeout | Hugging Face 모델 가중치 다운로드 중 네트워크 타임아웃 | `HF_HOME` 설정 후 재시도: `export HF_HOME=~/.cache/huggingface` |
+```text
+http://127.0.0.1:8000/
+```
 
+### 6. 프론트엔드 실행
+
+Node.js는 `vue/package.json` 기준으로 20.19 이상 또는 22.12 이상을 권장합니다.
+
+```bash
+cd vue
+npm install
+npm run dev
+```
+
+기본 개발 서버 주소는 다음과 같습니다.
+
+```text
+http://localhost:5173
+```
+
+## FastAPI 엔드포인트
+
+| Method | Endpoint | 설명 |
+| --- | --- | --- |
+| GET | `/` | 서버 상태 확인 |
+| GET | `/api/safety/all` | 지도 도로 오버레이용 전체 캐시 데이터 조회 |
+| GET | `/api/safety/observations/{observation_id}` | DB 레코드 ID 기준 상세 안전도 조회 |
+| GET | `/api/safety/{osmid}` | OSM ID 기준 상세 안전도 조회 |
+| GET | `/predict?lat={lat}&lng={lng}&heading={heading}` | Street View 단일 방향 실시간 분석 |
+| POST | `/predict-upload` | 업로드 이미지 실시간 분석 |
+
+주요 응답 필드는 다음과 같습니다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `safety_score` | 1.0부터 5.0까지의 최종 안전도 |
+| `analysis_basis` | 분석 방식: 캐시 구간 평균, 실시간 단일 방향, 업로드 이미지 |
+| `explanation` | HTML 문자열 형태의 XAI 설명 |
+| `image_url` | Street View 기반 분석일 때 사용한 이미지 URL |
+| `features` | 모델 입력에 사용된 추출 특징 |
+
+## 데이터베이스 스키마
+
+`database/models.py`의 `SafetyObservation` 모델은 지도 서비스의 핵심 캐시 테이블입니다.
+
+| 컬럼 | 설명 |
+| --- | --- |
+| `image_filename` | 분석 대상 또는 구간 식별자 |
+| `osmid` | OpenStreetMap way ID |
+| `segment_key` | OSM ID와 양 끝점 좌표로 만든 구간 고유 키 |
+| `latitude`, `longitude` | 구간 중간점 |
+| `start_latitude`, `start_longitude` | 구간 시작점 |
+| `end_latitude`, `end_longitude` | 구간 끝점 |
+| `source_dataset` | 데이터 출처 |
+| `safety_score` | 최종 안전 점수 |
+| `predicted_score` | 모델 예측 점수 |
+| `model_name` | 사용 모델 설명 |
+| `split` | train/test/full 등 데이터 분할명 |
+| 특징 컬럼 | YOLO, SegFormer, OpenCV에서 추출한 모델 입력 특징 |
+
+## 시연 시나리오
+
+1. FastAPI 서버와 Vue 개발 서버를 실행합니다.
+2. 브라우저에서 `http://localhost:5173`에 접속합니다.
+3. 지도 서비스에서 `도보` 버튼을 눌러 성북구 도보 네트워크와 안전도 색상 레이어를 표시합니다.
+4. 색상이 표시된 도로 구간을 클릭해 4방향 평균 기반 안전 점수와 설명을 확인합니다.
+5. 도보 레이어를 끄고 지도 임의 위치를 클릭해 Street View 실시간 분석을 확인합니다.
+6. `사진 분석` 메뉴에서 JPG 또는 PNG 거리 이미지를 업로드해 안전 점수와 설명을 확인합니다.
+
+## 문제 해결
+
+| 문제 | 원인 | 해결 |
+| --- | --- | --- |
+| `DATABASE_URL` 오류 | `.env`에 DB URL이 없음 | 프로젝트 루트 `.env`에 `DATABASE_URL=sqlite:///./mapsafe.db` 추가 |
+| FastAPI 업로드 오류 | `python-multipart` 미설치 | `pip install python-multipart` 실행 |
+| 지도 미표시 | Kakao JavaScript 키 누락 | `vue/.env`에 `VITE_KAKAO_MAP_KEY` 설정 |
+| Street View 요청 실패 | Google API 키, 결제, 권한, 쿼터 문제 | `GOOGLE_API_KEY`와 Street View API 활성화 상태 확인 |
+| Gemini 설명 미생성 | Gemini 키 없음 또는 쿼터 초과 | `GEMINI_API_KEY` 확인, 키가 없어도 로컬 설명으로 fallback |
+| CUDA out of memory | GPU 메모리 부족 | CPU 실행 또는 입력 배치/이미지 수 조정 |
+| SegFormer 다운로드 실패 | Hugging Face 모델 다운로드 문제 | 네트워크 확인 후 재실행, 캐시 디렉터리 설정 |
+| LightGBM 오류 | macOS에서 OpenMP 런타임 누락 | `brew install libomp` 실행 |
+| AutoGluon 설치 실패 | Python 버전 호환성 문제 | Python 3.10 또는 3.11 환경 사용 |
+
+## 요약
+
+MapSafe는 단순히 사진 한 장을 분류하는 모델이 아니라, 도로 구간 단위의 도시 안전 데이터를 생성하고 지도에서 바로 탐색할 수 있게 만든 서비스형 AI 시스템입니다. 사전 구축된 DB는 발표 현장에서 빠른 응답을 제공하고, 실시간 Street View 분석과 사진 업로드 분석은 모델이 새로운 입력에도 동작한다는 점을 보여줍니다.
+
+핵심 차별점은 다음과 같습니다.
+
+| 차별점 | 내용 |
+| --- | --- |
+| 멀티모달 비전 특징 | 객체 수, 도시 구성 비율, 밝기/엣지 특징을 함께 사용 |
+| 구간 단위 캐싱 | 4방향 Street View 평균으로 도로 구간을 대표하는 안전도 산출 |
+| 지도 기반 UX | 사용자가 안전/위험 구간을 직관적으로 탐색 가능 |
+| 설명 가능한 결과 | SHAP 중요도와 Gemini 설명으로 예측 근거 제공 |
+| 실시간 확장성 | 캐시된 구간뿐 아니라 임의 좌표와 업로드 이미지도 분석 가능 |
+
+## 관리 참고
+
+`.gitignore` 설정에 따라 데이터, 이미지, 모델 아티팩트, `.env` 파일은 기본적으로 Git에 포함되지 않습니다. 발표 또는 재현을 위해서는 다음 파일/폴더를 별도로 준비해야 합니다.
+
+| 항목 | 용도 |
+| --- | --- |
+| `models/` | FastAPI 서버가 로드하는 AutoGluon 모델 |
+| `models/shap_global_importance.csv` | Gemini 설명 생성 시 참고하는 전역 중요도 |
+| `mapsafe.db` 또는 지정 DB | 지도 캐시 데이터 |
+| `database/test_db.csv` | DB 적재용 사전 분석 CSV |
+| `unique_coords_20m.csv` | 도로 구간 사전 분석 입력 |
+| `images/`, `ground_truth.csv` | 모델 학습 입력 |
+| `.env`, `vue/.env` | API 키와 DB 연결 정보 |
