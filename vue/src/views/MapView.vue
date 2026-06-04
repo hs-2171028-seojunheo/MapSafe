@@ -133,9 +133,8 @@ export default {
               image: markerImage,
               zIndex: 9999,
             });
-            //테스트 this.map.setCenter(currentPosition);this.map.setLevel(2); 주석
-            //this.map.setCenter(currentPosition);
-            //this.map.setLevel(2);
+            this.map.setCenter(currentPosition);
+            this.map.setLevel(2);
             this.drawNearbyRoads();
           } else {
             this.currentMarker.setPosition(currentPosition);
@@ -411,12 +410,10 @@ export default {
     },
 
     async drawNearbyRoads() {
-      //테스트 if(!this.currentLatLng) 주석처리
       if (!this.currentLatLng) {
         console.warn("현재 위치가 아직 없습니다.");
         return;
       }
-      //테스트 성북구청 위치: 37.589372, 127.016745
       const lat = this.currentLatLng.getLat();
       const lng = this.currentLatLng.getLng();
 
