@@ -40,8 +40,8 @@ MapSafe/
 ├── requirements.txt
 ├── .gitignore
 │
-├── fast.py                         # FastAPI 서버, 예측 API, XAI 설명 생성
-├── main.py                         # 기본 학습 파이프라인: YOLO + SegFormer + AutoGluon
+├── main.py                         # FastAPI 서버, 예측 API, XAI 설명 생성
+├── pipeline.py                     # 기본 학습 파이프라인: YOLO + SegFormer + AutoGluon
 ├── model_predictor.py              # AutoGluon 학습, 평가, 예측, SHAP 산출
 ├── build_final_db.py               # Street View 4방향 분석 후 DB 적재용 CSV 생성
 ├── Model_01.py                     # ViT 기반 실험 모델 정의
@@ -82,7 +82,7 @@ MapSafe/
 1. `images/` 폴더에 거리 이미지를 준비합니다.
 2. 설문 기반 정답 파일 `ground_truth.csv`를 준비합니다.
 3. YOLO와 SegFormer가 이미지별 특징 CSV를 생성합니다.
-4. `main.py`가 두 CSV를 `image_filename` 기준으로 병합해 `extracted_features.csv`를 만듭니다.
+4. `pipeline.py`가 두 CSV를 `image_filename` 기준으로 병합해 `extracted_features.csv`를 만듭니다.
 5. `model_predictor.py`가 `extracted_features.csv`와 `ground_truth.csv`를 병합해 AutoGluon 회귀 모델을 학습합니다.
 6. 학습 결과는 `models/`에 저장되고, SHAP 결과는 `models/shap_global_importance.csv`, `models/shap_local_values.csv`, `models/shap_summary.png`로 저장됩니다.
 
@@ -173,7 +173,7 @@ VITE_KAKAO_MAP_KEY=your_kakao_javascript_key
 이미지와 정답 파일이 준비되어 있다면 기본 학습 파이프라인을 실행합니다.
 
 ```bash
-python main.py
+python pipeline.py
 ```
 
 이 명령은 다음 파일과 폴더를 생성합니다.
@@ -208,7 +208,7 @@ python database/import_observations.py --csv database/test_db.csv --source stree
 ### 5. 백엔드 서버 실행
 
 ```bash
-uvicorn fast:app --reload --host 127.0.0.1 --port 8000
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 서버가 정상 실행되면 다음 주소에서 상태를 확인할 수 있습니다.
