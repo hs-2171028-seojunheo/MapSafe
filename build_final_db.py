@@ -17,16 +17,78 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 INPUT_CSV = "unique_coords_20m.csv"
 OUTPUT_CSV = "database/test_db.csv"  # DB에 넣을 최종 완성본
+SKIPPED_SEGMENTS_CSV = "database/skipped_segments.csv"
 TEMP_IMG_DIR = "temp_4dir_images"    # 임시 이미지 저장 폴더
 MODEL_PATH = "models/" 
 
 # 테스트 모드 (전체 돌리려면 None)
-TEST_LIMIT = 1000
+TEST_LIMIT = None
+RESUME_FROM_OUTPUT = True
+CHECKPOINT_EVERY = 100
+MAX_CONSECUTIVE_403_SEGMENTS = 5
+COLUMN_ORDER = [
+    "image_filename",
+    "osmid",
+    "segment_key",
+    "latitude",
+    "longitude",
+    "start_latitude",
+    "start_longitude",
+    "end_latitude",
+    "end_longitude",
+    "source_dataset",
+    "safety_score",
+    "person_count",
+    "car_count",
+    "truck_count",
+    "road_ratio",
+    "building_ratio",
+    "wall_ratio",
+    "vegetation_ratio",
+    "sky_ratio",
+    "brightness_mean",
+    "dark_area_ratio",
+    "edge_density",
+    "model_name",
+    "predicted_score",
+    "split",
+]
+SKIPPED_COLUMN_ORDER = [
+    "segment_key",
+    "osmid",
+    "latitude",
+    "longitude",
+    "reason",
+]
 
-def download_4dir_images(osmid, lat, lng, output_dir):
+
+def get_streetview_metadata(lat, lng):
+    params = {
+        "location": f"{lat},{lng}",
+        "key": GOOGLE_API_KEY,
+        "radius": 50,
+        "source": "outdoor",
+    }
+    try:
+        res = requests.get(
+            "https://maps.googleapis.com/maps/api/streetview/metadata",
+            params=params,
+            timeout=15,
+        )
+        data = res.json()
+    except requests.RequestException as exc:
+        return "REQUEST_ERROR", None, str(exc)
+    except ValueError as exc:
+        return "METADATA_PARSE_ERROR", None, str(exc)
+
+    return data.get("status", f"HTTP_{res.status_code}"), data.get("pano_id"), data.get("error_message")
+
+
+def download_4dir_images(osmid, lat, lng, output_dir, pano_id=None):
     """중앙 좌표에서 0, 90, 180, 270도 방향의 사진 4장을 다운받습니다."""
     headings = [0, 90, 180, 270]
     downloaded_paths = []
+    failed_statuses = []
 
     os.makedirs(output_dir, exist_ok=True)
     
@@ -35,9 +97,23 @@ def download_4dir_images(osmid, lat, lng, output_dir):
         img_path = os.path.join(output_dir, img_name)
         
         if not os.path.exists(img_path):
-            url = f"https://maps.googleapis.com/maps/api/streetview?size=640x640&location={lat},{lng}&heading={h}&key={GOOGLE_API_KEY}&return_error_code=true"
+            params = {
+                "size": "640x640",
+                "heading": h,
+                "key": GOOGLE_API_KEY,
+                "return_error_code": "true",
+            }
+            if pano_id:
+                params["pano"] = pano_id
+            else:
+                params["location"] = f"{lat},{lng}"
+
             try:
-                res = requests.get(url, timeout=15)
+                res = requests.get(
+                    "https://maps.googleapis.com/maps/api/streetview",
+                    params=params,
+                    timeout=15,
+                )
             except requests.RequestException as exc:
                 print(f"  [경고] {osmid}의 {h}도 사진 다운로드 실패: {exc}")
                 continue
@@ -48,7 +124,11 @@ def download_4dir_images(osmid, lat, lng, output_dir):
                     f.write(res.content)
                 downloaded_paths.append(img_path)
             else:
-                error_message = res.text[:300].replace("\n", " ")
+                failed_statuses.append(res.status_code)
+                if "image" in content_type:
+                    error_message = "Google Street View가 에러 이미지를 반환했습니다."
+                else:
+                    error_message = res.text[:300].replace("\n", " ")
                 print(
                     f"  [경고] {osmid}의 {h}도 사진 다운로드 실패: "
                     f"HTTP {res.status_code}, content-type={content_type}, "
@@ -57,7 +137,20 @@ def download_4dir_images(osmid, lat, lng, output_dir):
         else:
             downloaded_paths.append(img_path)
             
-    return downloaded_paths
+    return downloaded_paths, failed_statuses
+
+
+def save_results(rows, output_csv):
+    result_df = pd.DataFrame(rows)
+    result_df = result_df.reindex(columns=COLUMN_ORDER)
+    result_df.to_csv(output_csv, index=False, encoding='utf-8-sig')
+
+
+def save_skipped_segments(rows, output_csv=SKIPPED_SEGMENTS_CSV):
+    skipped_df = pd.DataFrame(rows)
+    skipped_df = skipped_df.reindex(columns=SKIPPED_COLUMN_ORDER)
+    skipped_df = skipped_df.drop_duplicates(subset=["segment_key"], keep="last")
+    skipped_df.to_csv(output_csv, index=False, encoding='utf-8-sig')
 
 
 def clear_temp_dir(temp_dir: str) -> None:
@@ -125,6 +218,32 @@ def process_pipeline():
         target_df = target_df.head(TEST_LIMIT)
         print(f"⚠️ [테스트 모드] {TEST_LIMIT}개의 도로 구간만 먼저 테스트합니다.")
 
+    existing_rows = []
+    completed_segment_keys = set()
+    skipped_rows = []
+    skipped_segment_keys = set()
+    if RESUME_FROM_OUTPUT and os.path.exists(OUTPUT_CSV):
+        existing_df = pd.read_csv(OUTPUT_CSV)
+        if "segment_key" in existing_df.columns:
+            existing_df = existing_df.drop_duplicates(subset=["segment_key"], keep="last")
+            completed_segment_keys = set(existing_df["segment_key"].dropna().astype(str))
+            existing_rows = existing_df.reindex(columns=COLUMN_ORDER).to_dict("records")
+
+    if RESUME_FROM_OUTPUT and os.path.exists(SKIPPED_SEGMENTS_CSV):
+        skipped_df = pd.read_csv(SKIPPED_SEGMENTS_CSV)
+        if "segment_key" in skipped_df.columns:
+            skipped_df = skipped_df.drop_duplicates(subset=["segment_key"], keep="last")
+            skipped_segment_keys = set(skipped_df["segment_key"].dropna().astype(str))
+            skipped_rows = skipped_df.reindex(columns=SKIPPED_COLUMN_ORDER).to_dict("records")
+
+    if RESUME_FROM_OUTPUT:
+        already_handled = completed_segment_keys | skipped_segment_keys
+        target_df = target_df[~target_df["segment_key"].isin(already_handled)].reset_index(drop=True)
+        print(
+            f"[System] 기존 결과 {len(existing_rows)}행과 제외 구간 {len(skipped_rows)}개를 보존하고 "
+            f"남은 {len(target_df)}개 구간만 이어서 분석합니다."
+        )
+
     # 2. 모델 및 추출기 로드
     print("[System] 모델 및 AI 추출기를 로드합니다...")
     yolo = YoloFeatureExtractor()
@@ -134,7 +253,9 @@ def process_pipeline():
 
     required_features = predictor.feature_metadata_in.get_features()
     
-    final_db_rows = []
+    final_db_rows = existing_rows
+    new_success_count = 0
+    consecutive_403_segments = 0
 
     for idx, row in target_df.iterrows():
         osmid = row["osmid"]
@@ -150,9 +271,60 @@ def process_pipeline():
         # 구간별 개별 폴더 생성 후 4방향 사진 다운로드
         osmid_dir = os.path.join(TEMP_IMG_DIR, segment_key)
         try:
-            img_paths = download_4dir_images(segment_key, lat, lng, osmid_dir)
-            if not img_paths:
+            metadata_status, pano_id, metadata_error = get_streetview_metadata(lat, lng)
+            if metadata_status != "OK":
+                if metadata_status == "ZERO_RESULTS":
+                    print(f"  [정보] 구간 {segment_key} 주변 50m 내 Street View 없음: ZERO_RESULTS")
+                    skipped_rows.append({
+                        "segment_key": segment_key,
+                        "osmid": osmid,
+                        "latitude": lat,
+                        "longitude": lng,
+                        "reason": metadata_status,
+                    })
+                    skipped_segment_keys.add(segment_key)
+                    save_skipped_segments(skipped_rows)
+                    consecutive_403_segments = 0
+                    continue
+
+                if metadata_status in {"REQUEST_DENIED", "OVER_QUERY_LIMIT"}:
+                    save_results(final_db_rows, OUTPUT_CSV)
+                    raise RuntimeError(
+                        f"Street View Metadata API 오류: {metadata_status}. "
+                        f"{metadata_error or ''} API 키/결제/쿼터를 확인하세요. "
+                        f"현재까지 {len(final_db_rows)}행을 {OUTPUT_CSV}에 저장했습니다."
+                    )
+
+                print(f"  [경고] 구간 {segment_key} Street View metadata 확인 실패: {metadata_status}")
                 continue
+
+            img_paths, failed_statuses = download_4dir_images(segment_key, lat, lng, osmid_dir, pano_id)
+            if not img_paths:
+                if failed_statuses and all(status == 403 for status in failed_statuses):
+                    consecutive_403_segments += 1
+                    if consecutive_403_segments >= MAX_CONSECUTIVE_403_SEGMENTS:
+                        save_results(final_db_rows, OUTPUT_CSV)
+                        raise RuntimeError(
+                            "Street View API가 여러 구간에서 연속으로 HTTP 403을 반환했습니다. "
+                            "일일 사용량/결제 한도/API 권한을 확인한 뒤 다시 실행하세요. "
+                            f"현재까지 {len(final_db_rows)}행을 {OUTPUT_CSV}에 저장했습니다."
+                        )
+                elif failed_statuses and all(status == 404 for status in failed_statuses):
+                    print(f"  [정보] 구간 {segment_key} Street View 이미지 없음: STATIC_404")
+                    skipped_rows.append({
+                        "segment_key": segment_key,
+                        "osmid": osmid,
+                        "latitude": lat,
+                        "longitude": lng,
+                        "reason": "STATIC_404",
+                    })
+                    skipped_segment_keys.add(segment_key)
+                    save_skipped_segments(skipped_rows)
+                    consecutive_403_segments = 0
+                else:
+                    consecutive_403_segments = 0
+                continue
+            consecutive_403_segments = 0
 
             # 4장 사진 각각 특징 추출 (개별 폴더에서 추출)
             try:
@@ -217,40 +389,24 @@ def process_pipeline():
             }
 
             final_db_rows.append(db_row)
+            new_success_count += 1
+            if new_success_count % CHECKPOINT_EVERY == 0:
+                save_results(final_db_rows, OUTPUT_CSV)
+                print(f"  [System] 체크포인트 저장: {len(final_db_rows)}행")
+        except KeyboardInterrupt:
+            save_results(final_db_rows, OUTPUT_CSV)
+            if skipped_rows:
+                save_skipped_segments(skipped_rows)
+            print(
+                f"\n[System] 사용자 중단 감지. 현재까지 {len(final_db_rows)}행을 "
+                f"{OUTPUT_CSV}에 저장했습니다."
+            )
+            raise
         finally:
             remove_dir(osmid_dir)
 
     # 3. 최종 CSV 저장
-    result_df = pd.DataFrame(final_db_rows)
-    column_order = [
-        "image_filename",
-        "osmid",
-        "segment_key",
-        "latitude",
-        "longitude",
-        "start_latitude",
-        "start_longitude",
-        "end_latitude",
-        "end_longitude",
-        "source_dataset",
-        "safety_score",
-        "person_count",
-        "car_count",
-        "truck_count",
-        "road_ratio",
-        "building_ratio",
-        "wall_ratio",
-        "vegetation_ratio",
-        "sky_ratio",
-        "brightness_mean",
-        "dark_area_ratio",
-        "edge_density",
-        "model_name",
-        "predicted_score",
-        "split",
-    ]
-    result_df = result_df.reindex(columns=column_order)
-    result_df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8-sig')
+    save_results(final_db_rows, OUTPUT_CSV)
     print(f"\n분석 완료. DB 적재용 파일 생성됨: {OUTPUT_CSV}")
 
 if __name__ == "__main__":
