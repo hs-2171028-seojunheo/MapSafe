@@ -211,6 +211,15 @@ export default {
       try {
         const response = await fetch(fetchUrl);
         const result = await response.json();
+        if (result.available === false) {
+          this.infowindow.setContent(`
+            <div style="padding:10px; width:250px;">
+              <b>분석 불가</b><br>
+              ${result.message}
+            </div>
+          `);
+          return;
+        }
         const imageUrl = result.image_url;
         const analysisBasis = this.getAnalysisBasisLabel(result.analysis_basis);
         const analysisTitle = result.analysis_basis === "cached_segment_4dir_average"

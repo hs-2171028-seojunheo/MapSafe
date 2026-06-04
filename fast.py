@@ -359,6 +359,19 @@ def build_safety_response(obs):
         "image_url": url,
         "features": obs_dict
     }
+def check_streetview_available(lat: float, lng: float, radius: int = 50):
+    metadata_url = (
+        "https://maps.googleapis.com/maps/api/streetview/metadata"
+        f"?location={lat},{lng}"
+        f"&radius={radius}"
+        f"&source=outdoor"
+        f"&key={GOOGLE_API_KEY}"
+    )
+
+    response = requests.get(metadata_url)
+    data = response.json()
+
+    return data.get("status") == "OK", data
 
 @app.get("/api/safety/observations/{observation_id}")
 def get_safety_by_observation_id(observation_id: int, db = Depends(get_db)):
@@ -385,6 +398,13 @@ def get_safety_by_osmid(osmid: str, db = Depends(get_db)):
 
 @app.get("/predict")
 def predict(lat: float, lng: float, heading: int = 0):
+    available, metadata = check_streetview_available(lat, lng)
+
+    if not available:
+        return {
+            "available": False,
+            "message": "해당 위치에는 Google Street View 이미지가 없어 안전도 분석을 제공할 수 없습니다.",
+        }
     temp_dir = Path("./temp-images")
     temp_dir.mkdir(exist_ok=True)
     image_name = "streetview.jpg"
