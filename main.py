@@ -62,13 +62,21 @@ GEMINI_FALLBACK_CACHE_TTL_SECONDS = 60
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+"""
+app.add_middleware(
+    CORSMiddleware,
     allow_origins=["http://localhost:5173"],
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+"""
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
