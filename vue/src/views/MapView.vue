@@ -622,8 +622,8 @@ export default {
 
 #locationBtn {
   position: absolute;
-  top: 54px;
-  left: 12px;
+  top: 70px;
+  left: 16px;
   z-index: 9999;
 
   padding: 8px 14px;
